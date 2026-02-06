@@ -3,6 +3,9 @@
 # (str) Title of your application
 title = GestionFondosM
 
+# (str) Application versioning (should be a string)
+version = 0.1.0
+
 # (str) Package name
 package.name = gestionfondos
 
