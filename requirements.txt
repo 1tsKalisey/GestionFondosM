@@ -1,0 +1,25 @@
+# UI
+Kivy>=2.2.1
+KivyMD>=1.2.0
+
+# Persistence
+SQLAlchemy>=2.0.0
+
+# Networking
+aiohttp>=3.9.0
+requests>=2.31.0
+
+# Auth & Security
+pydantic>=2.0.0
+cryptography>=41.0.0
+keyring>=24.0.0
+google-auth>=2.23.0
+google-auth-oauthlib>=1.1.0
+
+# Utils
+python-dateutil>=2.8.2
+
+# Testing
+pytest>=7.4.0
+pytest-asyncio>=0.21.0
+pytest-cov>=4.1.0
