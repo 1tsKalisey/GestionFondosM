@@ -24,6 +24,10 @@ jobs:
         with:
           distribution: 'temurin'
           java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
       - name: Install Android SDK packages + accept licenses
         run: |
           yes | sdkmanager --licenses
@@ -50,22 +54,16 @@ jobs:
           python -m pip install --upgrade pip setuptools wheel
           pip install "cython<3" "buildozer==1.5.0" "python-for-android==2024.1.21"
 
-      # Limpieza completa antes de construir
+      # Limpieza segura en CI (sin llamar a buildozer android clean)
       - name: Clean workspace
         run: |
           rm -rf .buildozer bin
-          mkdir -p ~/.buildozer
+          rm -rf ~/.buildozer/android/platform/build-* || true
 
-      # Forzar el uso de NDK r23c (compatible con p4a y más estable)
-      - name: Configure NDK version
-        run: |
-          echo "[app]" > buildozer.spec.ndk || true
-          # Se descargará automáticamente la versión correcta
-          
       - name: Build APK (debug)
         env:
-          ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
-          ANDROID_HOME: /usr/local/lib/android/sdk
+          ANDROID_SDK_ROOT: ${{ env.ANDROID_SDK_ROOT }}
+          ANDROID_HOME: ${{ env.ANDROID_SDK_ROOT }}
           # Desactivar variables de compilación del host
           CC: ""
           CXX: ""
