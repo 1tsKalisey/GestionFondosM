@@ -15,9 +15,15 @@ package.domain = org.gestionfondos
 # (str) Source code where the main.py live
 source.dir = src
 
-# (str) The entry point of the application
+# (str) The entrypoint of the application
 # OJO: esto es relativo a source.dir
 entrypoint = gf_mobile/main.py
+
+# (list) Exclude files/extensions from packaging
+source.exclude_exts = pyc,pyo
+
+# (list) Exclude directories from packaging
+source.exclude_dirs = __pycache__
 
 # (list) Application requirements
 requirements = python3,kivy,kivymd,sqlalchemy,aiohttp,requests,pydantic<2,python-dateutil,cryptography,google-auth,google-auth-oauthlib
