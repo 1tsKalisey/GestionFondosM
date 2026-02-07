@@ -8,7 +8,8 @@ import logging
 from datetime import datetime, timedelta, timezone
 from typing import Optional, Dict, Any
 from dataclasses import dataclass
-import keyring
+import importlib
+import importlib.util
 import aiohttp
 import asyncio
 
@@ -65,7 +66,14 @@ class AuthService:
     def __init__(self):
         self.settings = get_settings()
         self.tokens: Optional[AuthTokens] = None
+        self._keyring = self._load_keyring()
         self._load_tokens_from_storage()
+
+    def _load_keyring(self):
+        """Carga keyring si está disponible en el entorno."""
+        if importlib.util.find_spec("keyring") is None:
+            return None
+        return importlib.import_module("keyring")
 
     def _get_storage_key(self) -> str:
         """Clave única para almacenamiento de tokens (keyring)"""
@@ -73,8 +81,11 @@ class AuthService:
 
     def _store_tokens_secure(self, tokens: AuthTokens) -> None:
         """Almacenar tokens de forma segura usando keyring del SO"""
+        if self._keyring is None:
+            self.tokens = tokens
+            return
         try:
-            keyring.set_password(
+            self._keyring.set_password(
                 "gestionfondos_mobile",
                 self._get_storage_key(),
                 json.dumps(tokens.to_dict()),
@@ -87,8 +98,14 @@ class AuthService:
 
     def _load_tokens_from_storage(self) -> None:
         """Cargar tokens desde almacenamiento seguro"""
+        if self._keyring is None:
+            self.tokens = None
+            return
         try:
-            stored = keyring.get_password("gestionfondos_mobile", self._get_storage_key())
+            stored = self._keyring.get_password(
+                "gestionfondos_mobile",
+                self._get_storage_key(),
+            )
             if stored:
                 data = json.loads(stored)
                 self.tokens = AuthTokens.from_dict(data)
@@ -101,8 +118,11 @@ class AuthService:
 
     def _clear_tokens_from_storage(self) -> None:
         """Limpiar tokens del almacenamiento"""
+        if self._keyring is None:
+            self.tokens = None
+            return
         try:
-            keyring.delete_password("gestionfondos_mobile", self._get_storage_key())
+            self._keyring.delete_password("gestionfondos_mobile", self._get_storage_key())
             logger.info("Tokens eliminados del almacenamiento")
         except Exception:
             pass  # Ignorar si no existen
