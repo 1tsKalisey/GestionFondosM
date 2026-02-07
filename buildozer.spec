@@ -35,23 +35,12 @@ fullscreen = 0
 # ANDROID (IMPORTANTE)
 # -------------------------
 
-# (int) Target Android API
 android.api = 34
-
-# (int) Minimum API your APK will support
 android.minapi = 23
-
-# (str) Pin exact build-tools to prevent sdkmanager picking a newer one (e.g., 36.1.x)
 android.sdk_build_tools = 34.0.0
-
-# (bool) Accept SDK licenses automatically (important in CI / runners)
 android.accept_sdk_license = True
 
-# (str) Android NDK version to use
-# NDK 25b te está dando problemas de macros; 23b suele ser más estable con p4a/buildozer.
-android.ndk = 23b
-
-# Workaround: define __GNUC_PREREQ macro if headers/toolchain don't provide it
+android.ndk = 25b
 android.cflags = -D__GNUC_PREREQ(x,y)=0
 
 
