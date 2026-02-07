@@ -20,7 +20,6 @@ source.dir = src
 entrypoint = gf_mobile/main.py
 
 # (list) Application requirements
-# Nota: en Android, "keyring" suele dar problemas; si falla, quítalo o usa una alternativa.
 requirements = python3,kivy,kivymd,sqlalchemy,aiohttp,requests,pydantic<2,python-dateutil,cryptography,google-auth,google-auth-oauthlib
 
 # (list) Permissions
@@ -48,18 +47,15 @@ android.sdk_build_tools = 34.0.0
 # (bool) Accept SDK licenses automatically (important in CI / runners)
 android.accept_sdk_license = True
 
-# (str) Android NDK version to use (opcional pero recomendable fijarlo)
-# Si ya tienes un NDK instalado distinto en tu entorno, ajusta este valor.
-android.ndk = 25b
+# (str) Android NDK version to use
+# NDK 25b te está dando problemas de macros; 23b suele ser más estable con p4a/buildozer.
+android.ndk = 23b
 
-# (bool) Use --private data directory for assets
-# android.private_storage = True
+# Workaround: define __GNUC_PREREQ macro if headers/toolchain don't provide it
+android.cflags = -D__GNUC_PREREQ(x,y)=0
 
 
 [buildozer]
 
 # (int) Log level (0 = error only, 1 = info, 2 = debug)
 log_level = 2
-
-# (str) Path to buildozer cache directory
-# build_dir = .buildozer
