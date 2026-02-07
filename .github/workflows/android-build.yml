@@ -28,7 +28,7 @@ jobs:
           sdkmanager "platform-tools" "platforms;android-34" "build-tools;34.0.0"
           ls -la "$ANDROID_SDK_ROOT/build-tools/34.0.0/aidl" || true
 
-      - name: Install system deps (autotools/libtool + libltdl)
+      - name: Install system deps (toolchain + common headers)
         run: |
           sudo apt-get update
           sudo apt-get install -y \
@@ -37,7 +37,9 @@ jobs:
             autoconf automake libtool libtool-bin m4 pkg-config gettext \
             libltdl-dev \
             libffi-dev libssl-dev zlib1g-dev \
-            libjpeg-dev libpng-dev \
+            libjpeg-dev libpng-dev libfreetype6-dev \
+            libsqlite3-dev libbz2-dev liblzma-dev \
+            libncurses5-dev libncursesw5-dev libreadline-dev \
             libgl1-mesa-dev libgles2-mesa-dev \
             libsdl2-dev libsdl2-image-dev libsdl2-mixer-dev libsdl2-ttf-dev
 
@@ -46,22 +48,31 @@ jobs:
           python -m pip install --upgrade pip setuptools wheel
           pip install "cython<3" "buildozer>=1.5.0" "python-for-android>=2024.1.21"
 
-      # "Clean" seguro en CI: borrar carpetas, NO llamar a `buildozer android clean`
       - name: Clean workspace (safe)
         run: |
           rm -rf .buildozer bin
           rm -rf ~/.buildozer/android/platform/build-* || true
-          rm -rf ~/.buildozer/android/platform/python-for-android || true
-          rm -rf ~/.buildozer/android/platform/android-sdk || true
 
       - name: Build APK (debug)
         env:
           ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
           ANDROID_HOME: /usr/local/lib/android/sdk
         run: |
+          set -euxo pipefail
           buildozer -v android debug
 
+      # Si falla, esto te saca EL PRIMER ERROR REAL (compilador/autoconf/etc.)
+      - name: Dump first real errors (on failure)
+        if: failure()
+        run: |
+          echo "=== grep: errors in .buildozer (most useful) ==="
+          (grep -RIn --color=never -E "(^|[^a-z])error:|fatal error:|undefined reference|No such file or directory" .buildozer || true) | tail -n 200
+
+          echo "=== last 200 lines of buildozer log (if present) ==="
+          find .buildozer -type f -iname "*.log" -print -exec tail -n 200 {} \; || true
+
       - name: Upload APK
+        if: success()
         uses: actions/upload-artifact@v4
         with:
           name: gestionfondosm-apk
