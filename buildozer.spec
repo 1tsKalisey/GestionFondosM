@@ -21,7 +21,7 @@ entrypoint = gf_mobile/main.py
 
 # (list) Application requirements
 # Nota: en Android, "keyring" suele dar problemas; si falla, quítalo o usa una alternativa.
-requirements = python3,kivy,kivymd,sqlalchemy,aiohttp,requests,pydantic,python-dateutil,cryptography,keyring,google-auth,google-auth-oauthlib
+requirements = python3,kivy,kivymd,sqlalchemy,aiohttp,requests,pydantic<2,python-dateutil,cryptography,google-auth,google-auth-oauthlib
 
 # (list) Permissions
 android.permissions = INTERNET
