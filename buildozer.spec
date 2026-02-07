@@ -55,3 +55,6 @@ log_level = 2
 
 # (str) Path to buildozer cache directory
 # build_dir = .buildozer
+
+android.api = 34
+android.sdk_build_tools = 34.0.0
