@@ -48,6 +48,7 @@ jobs:
           python -m pip install --upgrade pip setuptools wheel
           pip install "cython<3" "buildozer>=1.5.0" "python-for-android>=2024.1.21"
 
+      # Limpieza segura en CI (sin llamar a buildozer android clean)
       - name: Clean workspace (safe)
         run: |
           rm -rf .buildozer bin
@@ -60,16 +61,6 @@ jobs:
         run: |
           set -euxo pipefail
           buildozer -v android debug
-
-      # Si falla, esto te saca EL PRIMER ERROR REAL (compilador/autoconf/etc.)
-      - name: Dump first real errors (on failure)
-        if: failure()
-        run: |
-          echo "=== grep: errors in .buildozer (most useful) ==="
-          (grep -RIn --color=never -E "(^|[^a-z])error:|fatal error:|undefined reference|No such file or directory" .buildozer || true) | tail -n 200
-
-          echo "=== last 200 lines of buildozer log (if present) ==="
-          find .buildozer -type f -iname "*.log" -print -exec tail -n 200 {} \; || true
 
       - name: Upload APK
         if: success()
