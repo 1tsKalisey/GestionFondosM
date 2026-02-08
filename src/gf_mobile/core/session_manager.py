@@ -3,11 +3,12 @@ Gestor de sesiones con persistencia
 Mantiene sesión activa hasta 3 meses
 """
 
+import importlib
 import json
 import logging
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from typing import Optional, Dict, Any
-import keyring
 
 from gf_mobile.core.config import get_settings
 
@@ -69,17 +70,64 @@ class SessionManager:
     def __init__(self):
         self.settings = get_settings()
         self.current_session: Optional[SessionData] = None
+        self._keyring = self._load_keyring()
+        self._session_file = self._build_session_file()
         self._load_session()
+
+    def _load_keyring(self):
+        """Carga keyring si está disponible en el entorno."""
+        if importlib.util.find_spec("keyring") is None:
+            return None
+        try:
+            return importlib.import_module("keyring")
+        except Exception as exc:
+            logger.warning(f"No se pudo inicializar keyring: {exc}")
+            return None
+
+    def _build_session_file(self) -> Path:
+        """Ruta local para persistencia si keyring no está disponible."""
+        return self.settings.DB_PATH.parent / "session.json"
+
+    def _load_from_file(self) -> Optional[SessionData]:
+        if not self._session_file.exists():
+            return None
+        try:
+            data = json.loads(self._session_file.read_text(encoding="utf-8"))
+            return SessionData.from_dict(data)
+        except Exception as exc:
+            logger.warning(f"Error al leer sesión desde archivo: {exc}")
+            return None
+
+    def _save_to_file(self, session: SessionData) -> None:
+        try:
+            self._session_file.write_text(
+                json.dumps(session.to_dict()), encoding="utf-8"
+            )
+        except Exception as exc:
+            logger.warning(f"No se pudo guardar sesión en archivo: {exc}")
+
+    def _clear_file(self) -> None:
+        try:
+            if self._session_file.exists():
+                self._session_file.unlink()
+        except Exception:
+            pass
 
     def _load_session(self) -> None:
         """Cargar sesión desde almacenamiento seguro"""
         try:
-            stored = keyring.get_password("gestionfondos_mobile", self.SESSION_STORAGE_KEY)
+            stored = None
+            if self._keyring is not None:
+                stored = self._keyring.get_password(
+                    "gestionfondos_mobile", self.SESSION_STORAGE_KEY
+                )
             if stored:
                 data = json.loads(stored)
                 self.current_session = SessionData.from_dict(data)
-                
-                # Verificar si sigue siendo válida
+            else:
+                self.current_session = self._load_from_file()
+
+            if self.current_session:
                 if self.current_session.is_valid(self.SESSION_MAX_DAYS):
                     logger.info(
                         f"Sesión válida cargada para usuario: {self.current_session.user_id}"
@@ -96,19 +144,27 @@ class SessionManager:
     def _save_session(self, session: SessionData) -> None:
         """Guardar sesión en almacenamiento seguro"""
         try:
-            keyring.set_password(
-                "gestionfondos_mobile",
-                self.SESSION_STORAGE_KEY,
-                json.dumps(session.to_dict()),
-            )
+            if self._keyring is not None:
+                self._keyring.set_password(
+                    "gestionfondos_mobile",
+                    self.SESSION_STORAGE_KEY,
+                    json.dumps(session.to_dict()),
+                )
+            else:
+                self._save_to_file(session)
             logger.info(f"Sesión guardada para usuario: {session.user_id}")
         except Exception as e:
             logger.warning(f"No se pudo guardar sesión de forma segura: {e}")
+            self._save_to_file(session)
 
     def _clear_session(self) -> None:
         """Limpiar sesión del almacenamiento"""
         try:
-            keyring.delete_password("gestionfondos_mobile", self.SESSION_STORAGE_KEY)
+            if self._keyring is not None:
+                self._keyring.delete_password(
+                    "gestionfondos_mobile", self.SESSION_STORAGE_KEY
+                )
+            self._clear_file()
             logger.info("Sesión eliminada del almacenamiento")
         except Exception:
             pass  # Ignorar si no existe
