@@ -3,6 +3,9 @@ Aplicacion principal de GestionFondosM
 Punto de entrada de la aplicacion movil
 """
 
+print("[GF_DEBUG] gf_mobile.main imported")
+
+
 from kivy.uix.screenmanager import ScreenManager
 from kivymd.app import MDApp
 
@@ -22,6 +25,8 @@ from gf_mobile.services.budget_service import BudgetService
 from kivy.clock import Clock
 import threading
 import asyncio
+import traceback
+import os
 
 # Importar las pantallas
 from gf_mobile.ui.screens.login_screen import LoginScreen
@@ -40,6 +45,7 @@ class GestionFondosMApp(MDApp):
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
+        print("[GF_DEBUG] GestionFondosMApp.__init__")
         self.config_obj = get_settings()
         self.engine = None
         self.session_factory = None
@@ -262,7 +268,23 @@ class GestionFondosMApp(MDApp):
 def main():
     """Punto de entrada principal"""
     app = GestionFondosMApp()
-    app.run()
+    try:
+        app.run()
+    except Exception:
+        tb = traceback.format_exc()
+        # Intentar escribir el traceback en almacenamiento accesible del dispositivo
+        try:
+            log_path = os.path.join("/sdcard", "gestionfondosm_crash.log")
+            with open(log_path, "w", encoding="utf-8") as f:
+                f.write(tb)
+        except Exception:
+            # Si no se puede escribir en /sdcard, intentar directorio local
+            try:
+                with open("/tmp/gestionfondosm_crash.log", "w", encoding="utf-8") as f:
+                    f.write(tb)
+            except Exception:
+                pass
+        print("Unhandled exception during app startup:\n", tb)
 
 
 if __name__ == '__main__':
