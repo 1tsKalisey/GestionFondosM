@@ -3,8 +3,14 @@ Aplicacion principal de GestionFondosM
 Punto de entrada de la aplicacion movil
 """
 
-print("[GF_DEBUG] gf_mobile.main imported")
+import sys
+import logging
 
+# Configure minimal logging so messages appear in logcat reliably.
+logging.basicConfig(stream=sys.stderr, level=logging.INFO)
+logger = logging.getLogger("gf_mobile")
+
+logger.info("[GF_DEBUG] gf_mobile.main imported")
 
 from kivy.uix.screenmanager import ScreenManager
 from kivymd.app import MDApp
@@ -45,7 +51,7 @@ class GestionFondosMApp(MDApp):
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        print("[GF_DEBUG] GestionFondosMApp.__init__")
+        logger.info("[GF_DEBUG] GestionFondosMApp.__init__")
         self.config_obj = get_settings()
         self.engine = None
         self.session_factory = None
@@ -289,3 +295,18 @@ def main():
 
 if __name__ == '__main__':
     main()
+
+# Ensure the app starts when this module is imported in the Android/P4A
+# runtime: python-for-android sets `ANDROID_ARGUMENT` at process start. If
+# the module is imported (not executed as __main__), call `main()` once.
+try:
+    import os as _os, sys as _sys
+    if _os.environ.get("ANDROID_ARGUMENT") and not getattr(_sys, "_gf_app_started", False):
+        _sys._gf_app_started = True
+        try:
+            main()
+        except Exception:
+            # Let global excepthook handle logging
+            raise
+except Exception:
+    pass
