@@ -26,7 +26,7 @@ source.exclude_exts = pyc,pyo
 source.exclude_dirs = __pycache__
 
 # (list) Application requirements
-requirements = python3,kivy,kivymd,sqlalchemy,aiohttp,requests,pydantic>=2,pydantic-settings,python-dateutil,apscheduler,cryptography,keyring,google-auth,google-auth-oauthlib
+requirements = python3,kivy,kivymd,sqlalchemy,aiohttp,requests,python-dotenv,python-dateutil,apscheduler,cryptography,keyring,google-auth,google-auth-oauthlib
 
 # (list) Permissions
 android.permissions = INTERNET
