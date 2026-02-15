@@ -18,7 +18,14 @@ from sqlalchemy import (
     Table,
     Text,
 )
-from sqlalchemy.orm import declarative_base, relationship
+from sqlalchemy.orm import relationship
+
+try:
+    # SQLAlchemy >=1.4 (incluye 2.x)
+    from sqlalchemy.orm import declarative_base
+except ImportError:
+    # Compatibilidad defensiva para builds móviles con SQLAlchemy 1.3.x
+    from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.sql import func
 
 Base = declarative_base()
@@ -446,4 +453,3 @@ class CategorizationRule(Base):
 
     def __repr__(self) -> str:
         return f"<CategorizationRule keyword={self.merchant_keyword} confidence={self.confidence}>"
-

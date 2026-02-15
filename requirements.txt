@@ -3,7 +3,7 @@ Kivy>=2.2.1
 KivyMD>=1.2.0
 
 # Persistence
-SQLAlchemy>=2.0.0
+SQLAlchemy>=1.4.54,<2.0.0
 
 # Networking
 aiohttp>=3.9.0
