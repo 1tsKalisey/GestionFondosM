@@ -55,7 +55,7 @@ def apply_migrations(engine, migration_scripts: list[Path]):
     """
     logger.info(f"Aplicando {len(migration_scripts)} migraciones...")
 
-    with engine.connect() as conn:
+    with engine.begin() as conn:
         for script_path in migration_scripts:
             logger.debug(f"Ejecutando migración: {script_path.name}")
             with open(script_path, "r") as f:
@@ -70,8 +70,6 @@ def apply_migrations(engine, migration_scripts: list[Path]):
                             logger.warning(
                                 f"Migración {script_path.name} ya aplicada o warning: {e}"
                             )
-        conn.commit()
-
     logger.info("Migraciones completadas")
 
 
@@ -82,14 +80,14 @@ def init_database():
     """
     engine = build_engine()
 
+    # Crear tablas desde modelos SQLAlchemy (si no existen)
+    Base.metadata.create_all(engine)
+
     # Aplicar migraciones SQL
     migrations_dir = Path(__file__).parent / "migrations"
     if migrations_dir.exists():
         scripts = sorted(migrations_dir.glob("*.sql"))
         apply_migrations(engine, scripts)
-
-    # Crear tablas desde modelos SQLAlchemy (si no existen)
-    Base.metadata.create_all(engine)
 
     logger.info("Base de datos inicializada")
 
