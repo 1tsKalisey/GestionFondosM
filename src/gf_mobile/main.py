@@ -55,6 +55,7 @@ class GestionFondosMApp(MDApp):
         self.config_obj = get_settings()
         self.engine = None
         self.session_factory = None
+        self.app_session = None
         self.auth_service = None
         self.theme_manager = get_theme_manager()
 
@@ -154,7 +155,14 @@ class GestionFondosMApp(MDApp):
 
     def on_login_success(self, user_uid: str) -> None:
         """Callback cuando el login es exitoso"""
+        # Keep one long-lived session for UI services.
+        if self.app_session is not None:
+            try:
+                self.app_session.close()
+            except Exception:
+                pass
         session = self.session_factory()
+        self.app_session = session
         try:
             from gf_mobile.persistence.models import User, Account, Category
             
@@ -223,8 +231,13 @@ class GestionFondosMApp(MDApp):
             
             # Ejecutar sincronización inicial (si es la primera vez) luego incremental
             self._run_initial_and_incremental_sync(user_uid, firestore_client, local_user.id)
-        finally:
-            session.close()
+        except Exception:
+            try:
+                session.close()
+            except Exception:
+                pass
+            self.app_session = None
+            raise
 
     def _run_initial_and_incremental_sync(self, user_uid: str, firestore_client, local_user_id: int) -> None:
         """Ejecuta sincronización inicial (si es necesaria) y luego incremental."""
@@ -270,6 +283,15 @@ class GestionFondosMApp(MDApp):
         """Manejo de reanudacion de la app"""
         pass
 
+    def on_stop(self):
+        """Liberar recursos persistentes al cerrar la app."""
+        if self.app_session is not None:
+            try:
+                self.app_session.close()
+            except Exception:
+                pass
+            self.app_session = None
+
 
 def main():
     """Punto de entrada principal"""
@@ -301,7 +323,11 @@ if __name__ == '__main__':
 # the module is imported (not executed as __main__), call `main()` once.
 try:
     import os as _os, sys as _sys
-    if _os.environ.get("ANDROID_ARGUMENT") and not getattr(_sys, "_gf_app_started", False):
+    if (
+        __name__ != "__main__"
+        and _os.environ.get("ANDROID_ARGUMENT")
+        and not getattr(_sys, "_gf_app_started", False)
+    ):
         _sys._gf_app_started = True
         try:
             main()

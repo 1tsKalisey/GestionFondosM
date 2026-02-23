@@ -73,7 +73,11 @@ class AuthService:
         """Carga keyring si está disponible en el entorno."""
         if importlib.util.find_spec("keyring") is None:
             return None
-        return importlib.import_module("keyring")
+        try:
+            return importlib.import_module("keyring")
+        except Exception as exc:
+            logger.warning(f"No se pudo inicializar keyring: {exc}")
+            return None
 
     def _get_storage_key(self) -> str:
         """Clave única para almacenamiento de tokens (keyring)"""
