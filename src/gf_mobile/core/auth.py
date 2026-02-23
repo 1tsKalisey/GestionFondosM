@@ -136,6 +136,13 @@ class AuthService:
     def _is_android(self) -> bool:
         return sys.platform == "android" or bool(os.environ.get("ANDROID_ARGUMENT"))
 
+    def _ensure_firebase_auth_config(self) -> None:
+        if not (self.settings.FIREBASE_API_KEY or "").strip():
+            raise AuthError(
+                "FIREBASE_API_KEY no configurada. En Android, empaqueta src/.env "
+                "o define la variable en el entorno de build."
+            )
+
     async def sign_up(self, email: str, password: str) -> AuthTokens:
         """
         Registrar nuevo usuario con email y contrasena
@@ -151,6 +158,7 @@ class AuthService:
             InvalidCredentialsError: Email ya existe o contrasena invalida
             NetworkError: Error de conectividad
         """
+        self._ensure_firebase_auth_config()
         url = f"{self.settings.FIREBASE_AUTH_URL}/accounts:signUp"
         params = {"key": self.settings.FIREBASE_API_KEY}
         payload = {
@@ -178,6 +186,8 @@ class AuthService:
                 raise InvalidCredentialsError("Contrasena muy debil (min 6 caracteres)")
             raise InvalidCredentialsError(f"Error al registrar: {error_code or text}")
 
+        except (AuthError, InvalidCredentialsError):
+            raise
         except Exception as e:
             raise NetworkError(f"Error de conexion al registrar: {e}")
 
@@ -196,6 +206,7 @@ class AuthService:
             InvalidCredentialsError: Credenciales invalidas
             NetworkError: Error de conectividad
         """
+        self._ensure_firebase_auth_config()
         url = f"{self.settings.FIREBASE_AUTH_URL}/accounts:signInWithPassword"
         params = {"key": self.settings.FIREBASE_API_KEY}
         payload = {
@@ -223,6 +234,8 @@ class AuthService:
                 raise InvalidCredentialsError("Usuario deshabilitado")
             raise InvalidCredentialsError(f"Error al iniciar sesion: {error_code or text}")
 
+        except (AuthError, InvalidCredentialsError):
+            raise
         except Exception as e:
             raise NetworkError(f"Error de conexion al iniciar sesion: {e}")
 
@@ -240,6 +253,7 @@ class AuthService:
         """
         if not self.tokens or not self.tokens.refresh_token:
             raise AuthError("No hay tokens validos para refrescar")
+        self._ensure_firebase_auth_config()
 
         url = "https://securetoken.googleapis.com/v1/token"
         payload = {
@@ -266,6 +280,8 @@ class AuthService:
             self.sign_out()
             raise TokenExpiredError("RefreshToken expirado")
 
+        except (AuthError, TokenExpiredError):
+            raise
         except Exception as e:
             raise NetworkError(f"Error al refrescar tokens: {e}")
 
@@ -382,6 +398,7 @@ class AuthService:
 
     async def _exchange_google_token_for_firebase(self, google_id_token: str) -> AuthTokens:
         """Intercambiar ID token de Google por tokens de Firebase"""
+        self._ensure_firebase_auth_config()
         url = f"{self.settings.FIREBASE_AUTH_URL}/accounts:signInWithIdp"
         params = {"key": self.settings.FIREBASE_API_KEY}
         payload = {
@@ -407,6 +424,8 @@ class AuthService:
             logger.error(f"Error de Firebase: {error_msg}")
             logger.error(f"Response completa: {data or text}")
             raise AuthError(f"Error al autenticar con Google: {error_msg or text}")
+        except AuthError:
+            raise
         except Exception as e:
             raise NetworkError(f"Error de conexion con Google: {e}")
 

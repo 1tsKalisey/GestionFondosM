@@ -89,8 +89,33 @@ def _as_int(value: Any, default: int) -> int:
 
 
 def _load_raw_config() -> dict[str, Any]:
-    dotenv_config = dotenv_values(".env")
-    merged = {k: v for k, v in dotenv_config.items() if v is not None}
+    # Try several locations so Android builds can ship config as src/.env.
+    candidates: list[Path] = []
+    custom_env_path = os.environ.get("GF_ENV_FILE")
+    if custom_env_path:
+        candidates.append(Path(custom_env_path))
+
+    cwd = Path.cwd()
+    candidates.extend(
+        [
+            cwd / ".env",
+            cwd.parent / ".env",
+            Path(__file__).resolve().parents[2] / ".env",  # src/.env
+            Path(__file__).resolve().parents[3] / ".env",  # repo/.env (dev)
+        ]
+    )
+
+    dotenv_config: dict[str, Any] = {}
+    for env_path in candidates:
+        try:
+            if env_path.exists():
+                loaded = dotenv_values(env_path)
+                dotenv_config.update({k: v for k, v in loaded.items() if v is not None})
+                break
+        except Exception:
+            continue
+
+    merged = dict(dotenv_config)
     merged.update(os.environ)
     return merged
 

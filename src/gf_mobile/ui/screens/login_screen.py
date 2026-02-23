@@ -2,8 +2,11 @@
 LoginScreen
 """
 
+import os
+import sys
+
 from kivy.lang import Builder
-from kivy.properties import StringProperty
+from kivy.properties import StringProperty, BooleanProperty
 from kivy.uix.screenmanager import Screen
 from kivymd.uix.button import MDRaisedButton
 from kivymd.uix.textfield import MDTextField
@@ -52,9 +55,12 @@ Builder.load_string(
             size_hint_y: 0.3
 
         MDRaisedButton:
+            id: google_btn
             text: "Iniciar sesion con Google"
             pos_hint: {"center_x": 0.5}
             md_bg_color: 0.26, 0.52, 0.96, 1
+            disabled: not root.google_login_available
+            opacity: 1 if root.google_login_available else 0.35
             on_release: root.on_google_login()
 
         MDLabel:
@@ -73,10 +79,14 @@ class LoginScreen(Screen):
     email = StringProperty("")
     password = StringProperty("")
     status_message = StringProperty("")
+    google_login_available = BooleanProperty(True)
 
     def __init__(self, auth_service=None, **kwargs):
         super().__init__(**kwargs)
         self.auth_service = auth_service
+        self.google_login_available = not (
+            sys.platform == "android" or bool(os.environ.get("ANDROID_ARGUMENT"))
+        )
 
     def on_login(self) -> None:
         """Callback de login."""
@@ -103,6 +113,9 @@ class LoginScreen(Screen):
 
     def on_google_login(self) -> None:
         """Callback de login con Google."""
+        if not self.google_login_available:
+            self.status_message = "Google Sign-In no disponible en Android en esta version"
+            return
         if not self.auth_service:
             self.status_message = "AuthService no configurado"
             return
