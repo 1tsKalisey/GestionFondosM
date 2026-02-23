@@ -26,7 +26,7 @@ source.exclude_exts = pyc,pyo
 source.exclude_dirs = __pycache__
 
 # (list) Application requirements
-requirements = python3,kivy,kivymd,sqlalchemy,requests,python-dotenv,python-dateutil,apscheduler,tzlocal,cryptography,keyring
+requirements = python3,kivy,kivymd,sqlalchemy,requests,python-dotenv,python-dateutil,apscheduler,tzlocal,cryptography,keyring,aiohttp,google-auth,google-auth-oauthlib,oauthlib,requests-oauthlib
 
 
 # Evita usar el recipe legacy de SQLAlchemy (descarga en pypi.python.org -> 404)
