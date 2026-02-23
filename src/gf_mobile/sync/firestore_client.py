@@ -6,7 +6,10 @@ Cliente REST para Firestore.
 
 from __future__ import annotations
 
-import aiohttp
+try:
+    import aiohttp
+except Exception:  # pragma: no cover
+    aiohttp = None
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -46,6 +49,10 @@ class FirestoreClient:
         json_body: Optional[Dict[str, Any]] = None,
         params: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
+        if aiohttp is None:
+            raise NetworkError(
+                "Dependencia de red faltante: aiohttp no esta disponible en este build."
+            )
         session = self._session or aiohttp.ClientSession()
         close_session = self._session is None
         try:

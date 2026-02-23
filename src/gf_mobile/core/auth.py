@@ -10,8 +10,11 @@ from typing import Optional, Dict, Any
 from dataclasses import dataclass
 import importlib
 import importlib.util
-import aiohttp
 import asyncio
+try:
+    import aiohttp
+except Exception:  # pragma: no cover
+    aiohttp = None
 
 from gf_mobile.core.config import get_settings
 from gf_mobile.core.exceptions import (
@@ -131,6 +134,12 @@ class AuthService:
         except Exception:
             pass  # Ignorar si no existen
 
+    def _ensure_aiohttp_available(self) -> None:
+        if aiohttp is None:
+            raise NetworkError(
+                "Dependencia de red faltante: aiohttp no esta disponible en este build."
+            )
+
     async def sign_up(self, email: str, password: str) -> AuthTokens:
         """
         Registrar nuevo usuario con email y contraseña
@@ -153,6 +162,7 @@ class AuthService:
             "password": password,
             "returnSecureToken": True,
         }
+        self._ensure_aiohttp_available()
 
         try:
             async with aiohttp.ClientSession() as session:
@@ -199,6 +209,7 @@ class AuthService:
             "password": password,
             "returnSecureToken": True,
         }
+        self._ensure_aiohttp_available()
 
         try:
             async with aiohttp.ClientSession() as session:
@@ -244,6 +255,7 @@ class AuthService:
             "refresh_token": self.tokens.refresh_token,
         }
         params = {"key": self.settings.FIREBASE_API_KEY}
+        self._ensure_aiohttp_available()
 
         try:
             async with aiohttp.ClientSession() as session:
@@ -379,6 +391,7 @@ class AuthService:
             "requestUri": "http://localhost",
             "returnSecureToken": True,
         }
+        self._ensure_aiohttp_available()
         
         try:
             async with aiohttp.ClientSession() as session:
