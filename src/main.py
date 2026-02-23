@@ -2,12 +2,14 @@
 
 This module installs a global excepthook as early as possible so any
 import-time or startup exceptions are captured and written to
-`/sdcard/gestionfondosm_crash.log` (or `/tmp` as fallback) and printed
-to stderr/logcat. This helps diagnosing crashes in built APKs.
+the app-private Android storage path (`ANDROID_ARGUMENT`) with safe
+fallbacks, and prints to stderr/logcat. This helps diagnosing crashes
+in built APKs.
 """
 
 import os
 import sys
+import tempfile
 import traceback
 
 # Make stdout/stderr unbuffered in case Android buffers output.
@@ -15,8 +17,20 @@ os.environ.setdefault("PYTHONUNBUFFERED", "1")
 
 
 def _write_crash_log(tb_text: str) -> None:
-    # Try /sdcard first (accessible on many devices), else /tmp
-    paths = ["/sdcard/gestionfondosm_crash.log", "/tmp/gestionfondosm_crash.log"]
+    # On modern Android, writing directly to /sdcard root often fails due to
+    # scoped storage. Prefer app-private storage and safe fallbacks.
+    paths = []
+
+    android_argument = os.environ.get("ANDROID_ARGUMENT")
+    if android_argument:
+        paths.append(os.path.join(android_argument, "gestionfondosm_crash.log"))
+
+    paths.extend(
+        [
+            "/sdcard/Download/gestionfondosm_crash.log",
+            os.path.join(tempfile.gettempdir(), "gestionfondosm_crash.log"),
+        ]
+    )
     for p in paths:
         try:
             with open(p, "w", encoding="utf-8") as f:
