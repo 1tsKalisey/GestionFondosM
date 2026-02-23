@@ -5,16 +5,14 @@ Soporte para login, registro, refresh token, logout, Google Sign-In
 
 import json
 import logging
+import os
+import sys
 from datetime import datetime, timedelta, timezone
 from typing import Optional, Dict, Any
 from dataclasses import dataclass
 import importlib
 import importlib.util
 import asyncio
-try:
-    import aiohttp
-except Exception:  # pragma: no cover
-    aiohttp = None
 
 from gf_mobile.core.config import get_settings
 from gf_mobile.core.exceptions import (
@@ -23,6 +21,7 @@ from gf_mobile.core.exceptions import (
     InvalidCredentialsError,
     NetworkError,
 )
+from gf_mobile.core.http_client import request_json
 
 logger = logging.getLogger(__name__)
 
@@ -134,25 +133,22 @@ class AuthService:
         except Exception:
             pass  # Ignorar si no existen
 
-    def _ensure_aiohttp_available(self) -> None:
-        if aiohttp is None:
-            raise NetworkError(
-                "Dependencia de red faltante: aiohttp no esta disponible en este build."
-            )
+    def _is_android(self) -> bool:
+        return sys.platform == "android" or bool(os.environ.get("ANDROID_ARGUMENT"))
 
     async def sign_up(self, email: str, password: str) -> AuthTokens:
         """
-        Registrar nuevo usuario con email y contraseña
+        Registrar nuevo usuario con email y contrasena
         
         Args:
             email: Email del usuario
-            password: Contraseña (mín 6 caracteres en Firebase)
+            password: Contrasena (min 6 caracteres en Firebase)
         
         Returns:
             AuthTokens con idToken, refreshToken, etc.
         
         Raises:
-            InvalidCredentialsError: Email ya existe o contraseña inválida
+            InvalidCredentialsError: Email ya existe o contrasena invalida
             NetworkError: Error de conectividad
         """
         url = f"{self.settings.FIREBASE_AUTH_URL}/accounts:signUp"
@@ -162,44 +158,42 @@ class AuthService:
             "password": password,
             "returnSecureToken": True,
         }
-        self._ensure_aiohttp_available()
 
         try:
-            async with aiohttp.ClientSession() as session:
-                async with session.post(url, json=payload, params=params, timeout=10) as resp:
-                    data = await resp.json()
+            status, data, text = await request_json(
+                "POST", url, json_body=payload, params=params, timeout=10
+            )
 
-                    if resp.status == 200:
-                        tokens = self._extract_tokens(data, email)
-                        self._store_tokens_secure(tokens)
-                        self.tokens = tokens
-                        logger.info(f"Usuario registrado: {email}")
-                        return tokens
-                    else:
-                        error_code = data.get("error", {}).get("message", "Unknown")
-                        if "EMAIL_EXISTS" in error_code:
-                            raise InvalidCredentialsError(f"El email {email} ya está registrado")
-                        elif "WEAK_PASSWORD" in error_code:
-                            raise InvalidCredentialsError("Contraseña muy débil (mín 6 caracteres)")
-                        else:
-                            raise InvalidCredentialsError(f"Error al registrar: {error_code}")
+            if status == 200:
+                tokens = self._extract_tokens(data or {}, email)
+                self._store_tokens_secure(tokens)
+                self.tokens = tokens
+                logger.info(f"Usuario registrado: {email}")
+                return tokens
 
-        except aiohttp.ClientError as e:
-            raise NetworkError(f"Error de conexión al registrar: {e}")
+            error_code = (data or {}).get("error", {}).get("message", "Unknown")
+            if "EMAIL_EXISTS" in error_code:
+                raise InvalidCredentialsError(f"El email {email} ya esta registrado")
+            if "WEAK_PASSWORD" in error_code:
+                raise InvalidCredentialsError("Contrasena muy debil (min 6 caracteres)")
+            raise InvalidCredentialsError(f"Error al registrar: {error_code or text}")
+
+        except Exception as e:
+            raise NetworkError(f"Error de conexion al registrar: {e}")
 
     async def sign_in(self, email: str, password: str) -> AuthTokens:
         """
-        Iniciar sesión con email y contraseña
+        Iniciar sesion con email y contrasena
         
         Args:
             email: Email del usuario
-            password: Contraseña
+            password: Contrasena
         
         Returns:
             AuthTokens con idToken, refreshToken, etc.
         
         Raises:
-            InvalidCredentialsError: Credenciales inválidas
+            InvalidCredentialsError: Credenciales invalidas
             NetworkError: Error de conectividad
         """
         url = f"{self.settings.FIREBASE_AUTH_URL}/accounts:signInWithPassword"
@@ -209,45 +203,43 @@ class AuthService:
             "password": password,
             "returnSecureToken": True,
         }
-        self._ensure_aiohttp_available()
 
         try:
-            async with aiohttp.ClientSession() as session:
-                async with session.post(url, json=payload, params=params, timeout=10) as resp:
-                    data = await resp.json()
+            status, data, text = await request_json(
+                "POST", url, json_body=payload, params=params, timeout=10
+            )
 
-                    if resp.status == 200:
-                        tokens = self._extract_tokens(data, email)
-                        self._store_tokens_secure(tokens)
-                        self.tokens = tokens
-                        logger.info(f"Sesión iniciada: {email}")
-                        return tokens
-                    else:
-                        error_code = data.get("error", {}).get("message", "Unknown")
-                        if "INVALID_PASSWORD" in error_code or "INVALID_EMAIL" in error_code:
-                            raise InvalidCredentialsError("Email o contraseña incorrectos")
-                        elif "USER_DISABLED" in error_code:
-                            raise InvalidCredentialsError("Usuario deshabilitado")
-                        else:
-                            raise InvalidCredentialsError(f"Error al iniciar sesión: {error_code}")
+            if status == 200:
+                tokens = self._extract_tokens(data or {}, email)
+                self._store_tokens_secure(tokens)
+                self.tokens = tokens
+                logger.info(f"Sesion iniciada: {email}")
+                return tokens
 
-        except aiohttp.ClientError as e:
-            raise NetworkError(f"Error de conexión al iniciar sesión: {e}")
+            error_code = (data or {}).get("error", {}).get("message", "Unknown")
+            if "INVALID_PASSWORD" in error_code or "INVALID_EMAIL" in error_code:
+                raise InvalidCredentialsError("Email o contrasena incorrectos")
+            if "USER_DISABLED" in error_code:
+                raise InvalidCredentialsError("Usuario deshabilitado")
+            raise InvalidCredentialsError(f"Error al iniciar sesion: {error_code or text}")
+
+        except Exception as e:
+            raise NetworkError(f"Error de conexion al iniciar sesion: {e}")
 
     async def refresh_tokens(self) -> AuthTokens:
         """
         Refrescar idToken usando refreshToken
-        Llamar cuando idToken esté próximo a expirar
+        Llamar cuando idToken este proximo a expirar
         
         Returns:
             AuthTokens actualizado con nuevo idToken
         
         Raises:
-            TokenExpiredError: RefreshToken expirado o inválido
+            TokenExpiredError: RefreshToken expirado o invalido
             NetworkError: Error de conectividad
         """
         if not self.tokens or not self.tokens.refresh_token:
-            raise AuthError("No hay tokens válidos para refrescar")
+            raise AuthError("No hay tokens validos para refrescar")
 
         url = "https://securetoken.googleapis.com/v1/token"
         payload = {
@@ -255,27 +247,26 @@ class AuthService:
             "refresh_token": self.tokens.refresh_token,
         }
         params = {"key": self.settings.FIREBASE_API_KEY}
-        self._ensure_aiohttp_available()
 
         try:
-            async with aiohttp.ClientSession() as session:
-                async with session.post(url, data=payload, params=params, timeout=10) as resp:
-                    data = await resp.json()
+            status, data, text = await request_json(
+                "POST", url, data=payload, params=params, timeout=10
+            )
 
-                    if resp.status == 200:
-                        new_tokens = self._extract_tokens_from_refresh(data)
-                        # Preservar datos de usuario
-                        new_tokens.user_id = self.tokens.user_id
-                        self._store_tokens_secure(new_tokens)
-                        self.tokens = new_tokens
-                        logger.info(f"Tokens refrescados para usuario {new_tokens.user_id}")
-                        return new_tokens
-                    else:
-                        logger.warning("RefreshToken inválido o expirado")
-                        self.sign_out()
-                        raise TokenExpiredError("RefreshToken expirado")
+            if status == 200:
+                new_tokens = self._extract_tokens_from_refresh(data or {})
+                # Preservar datos de usuario
+                new_tokens.user_id = self.tokens.user_id
+                self._store_tokens_secure(new_tokens)
+                self.tokens = new_tokens
+                logger.info(f"Tokens refrescados para usuario {new_tokens.user_id}")
+                return new_tokens
 
-        except aiohttp.ClientError as e:
+            logger.warning("RefreshToken invalido o expirado")
+            self.sign_out()
+            raise TokenExpiredError("RefreshToken expirado")
+
+        except Exception as e:
             raise NetworkError(f"Error al refrescar tokens: {e}")
 
     async def get_valid_id_token(self) -> str:
@@ -328,14 +319,19 @@ class AuthService:
 
     async def sign_in_with_google(self) -> AuthTokens:
         """
-        Iniciar sesión con Google de forma simple
-        Usa google-auth-oauthlib para manejar el flujo automáticamente
+        Iniciar sesion con Google de forma simple
+        Usa google-auth-oauthlib para manejar el flujo automaticamente
         """
+        if self._is_android():
+            raise AuthError(
+                "Google Sign-In no esta soportado en Android en esta version. "
+                "Usa email/contrasena o implementa un flujo OAuth nativo."
+            )
         try:
             from google_auth_oauthlib.flow import InstalledAppFlow
             import google.auth.transport.requests
             
-            # Configuración del cliente OAuth de Google
+            # Configuracion del cliente OAuth de Google
             # Necesitas crear esto en Google Cloud Console
             client_id = self.settings.GOOGLE_OAUTH_CLIENT_ID
             client_secret = self.settings.GOOGLE_OAUTH_CLIENT_SECRET
@@ -356,16 +352,18 @@ class AuthService:
                 }
             }
             
-            # Scopes necesarios para obtener información básica del usuario
-            scopes = ['openid', 'https://www.googleapis.com/auth/userinfo.email', 
+            # Scopes necesarios para obtener informacion basica del usuario
+            scopes = ['openid', 'https://www.googleapis.com/auth/userinfo.email',
                      'https://www.googleapis.com/auth/userinfo.profile']
             
-            # Crear flujo de autenticación
+            # Crear flujo de autenticacion
             flow = InstalledAppFlow.from_client_config(client_config, scopes=scopes)
             
-            # Ejecutar el flujo local (abre navegador automáticamente)
+            # Ejecutar el flujo local (abre navegador automaticamente)
             logger.info("Abriendo navegador para login de Google...")
-            credentials = flow.run_local_server(port=8080, prompt='consent')
+            credentials = await asyncio.to_thread(
+                flow.run_local_server, port=8080, prompt='consent'
+            )
             
             # Obtener ID token de Google
             id_token = credentials.id_token
@@ -380,8 +378,8 @@ class AuthService:
             raise AuthError("Falta instalar: pip install google-auth-oauthlib")
         except Exception as e:
             logger.error(f"Error en Google Sign-In: {e}")
-            raise AuthError(f"Error al iniciar sesión con Google: {e}")
-    
+            raise AuthError(f"Error al iniciar sesion con Google: {e}")
+
     async def _exchange_google_token_for_firebase(self, google_id_token: str) -> AuthTokens:
         """Intercambiar ID token de Google por tokens de Firebase"""
         url = f"{self.settings.FIREBASE_AUTH_URL}/accounts:signInWithIdp"
@@ -391,27 +389,26 @@ class AuthService:
             "requestUri": "http://localhost",
             "returnSecureToken": True,
         }
-        self._ensure_aiohttp_available()
         
         try:
-            async with aiohttp.ClientSession() as session:
-                async with session.post(url, json=payload, params=params, timeout=10) as resp:
-                    data = await resp.json()
-                    
-                    if resp.status == 200:
-                        email = data.get("email", "google_user")
-                        tokens = self._extract_tokens(data, email)
-                        self._store_tokens_secure(tokens)
-                        self.tokens = tokens
-                        logger.info(f"Sesión iniciada con Google: {email}")
-                        return tokens
-                    else:
-                        error_msg = data.get("error", {}).get("message", "Unknown")
-                        logger.error(f"Error de Firebase: {error_msg}")
-                        logger.error(f"Response completa: {data}")
-                        raise AuthError(f"Error al autenticar con Google: {error_msg}")
-        except aiohttp.ClientError as e:
-            raise NetworkError(f"Error de conexión con Google: {e}")
+            status, data, text = await request_json(
+                "POST", url, json_body=payload, params=params, timeout=10
+            )
+
+            if status == 200:
+                email = (data or {}).get("email", "google_user")
+                tokens = self._extract_tokens(data or {}, email)
+                self._store_tokens_secure(tokens)
+                self.tokens = tokens
+                logger.info(f"Sesion iniciada con Google: {email}")
+                return tokens
+
+            error_msg = (data or {}).get("error", {}).get("message", "Unknown")
+            logger.error(f"Error de Firebase: {error_msg}")
+            logger.error(f"Response completa: {data or text}")
+            raise AuthError(f"Error al autenticar con Google: {error_msg or text}")
+        except Exception as e:
+            raise NetworkError(f"Error de conexion con Google: {e}")
 
     @staticmethod
     def _extract_tokens(response: Dict[str, Any], email: str) -> AuthTokens:

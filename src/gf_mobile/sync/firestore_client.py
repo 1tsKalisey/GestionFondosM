@@ -6,16 +6,13 @@ Cliente REST para Firestore.
 
 from __future__ import annotations
 
-try:
-    import aiohttp
-except Exception:  # pragma: no cover
-    aiohttp = None
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Tuple
 
 from gf_mobile.core.exceptions import NetworkError
 from gf_mobile.core.config import Settings
 from gf_mobile.core.auth import AuthService
+from gf_mobile.core.http_client import request_json
 
 
 class FirestoreClient:
@@ -25,11 +22,9 @@ class FirestoreClient:
         self,
         settings: Settings,
         auth_service: AuthService,
-        session: Optional[aiohttp.ClientSession] = None,
     ) -> None:
         self.settings = settings
         self.auth_service = auth_service
-        self._session = session
 
     @property
     def _base_url(self) -> str:
@@ -49,22 +44,23 @@ class FirestoreClient:
         json_body: Optional[Dict[str, Any]] = None,
         params: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
-        if aiohttp is None:
-            raise NetworkError(
-                "Dependencia de red faltante: aiohttp no esta disponible en este build."
-            )
-        session = self._session or aiohttp.ClientSession()
-        close_session = self._session is None
         try:
             headers = await self._get_headers()
-            async with session.request(method, url, json=json_body, params=params, headers=headers) as resp:
-                if resp.status >= 400:
-                    text = await resp.text()
-                    raise NetworkError(f"Firestore error {resp.status}: {text}")
-                return await resp.json()
-        finally:
-            if close_session:
-                await session.close()
+            status, data, text = await request_json(
+                method,
+                url,
+                json_body=json_body,
+                params=params,
+                headers=headers,
+                timeout=10,
+            )
+            if status >= 400:
+                raise NetworkError(f"Firestore error {status}: {text}")
+            if data is None:
+                raise NetworkError("Firestore error: respuesta sin JSON")
+            return data
+        except Exception as e:
+            raise NetworkError(f"Firestore error: {e}")
 
     def _run_query_path(self, user_uid: str) -> str:
         return f"{self._base_url}/users/{user_uid}:runQuery"
