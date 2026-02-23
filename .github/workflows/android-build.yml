@@ -60,6 +60,44 @@ jobs:
           rm -rf .buildozer bin
           rm -rf ~/.buildozer/android/platform/build-* || true
 
+      - name: Verify buildozer dependencies
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import re
+
+          spec = Path("buildozer.spec").read_text(encoding="utf-8")
+          m = re.search(r"^\s*requirements\s*=\s*(.+)$", spec, re.MULTILINE)
+          if not m:
+              raise SystemExit("No se encontró la línea 'requirements =' en buildozer.spec")
+
+          reqs = {x.strip().lower() for x in m.group(1).split(",") if x.strip()}
+          required = {
+              "python3",
+              "kivy",
+              "kivymd",
+              "sqlalchemy",
+              "aiohttp",
+              "requests",
+              "python-dotenv",
+              "python-dateutil",
+              "apscheduler",
+              "tzlocal",
+              "keyring",
+              "google-auth",
+              "google-auth-oauthlib",
+              "requests-oauthlib",
+              "oauthlib",
+          }
+          missing = sorted(required - reqs)
+          if missing:
+              raise SystemExit(
+                  "Faltan dependencias en buildozer.spec requirements: "
+                  + ", ".join(missing)
+              )
+          print("Dependencias Android verificadas correctamente.")
+          PY
+
       - name: Build APK (debug)
         env:
           ANDROID_SDK_ROOT: ${{ env.ANDROID_SDK_ROOT }}

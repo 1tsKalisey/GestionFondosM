@@ -26,7 +26,7 @@ source.exclude_exts = pyc,pyo
 source.exclude_dirs = __pycache__
 
 # (list) Application requirements
-requirements = python3,kivy,kivymd,sqlalchemy,aiohttp,multidict,yarl,frozenlist,aiosignal,attrs,propcache,requests,python-dotenv,python-dateutil,apscheduler,tzlocal,cryptography,keyring,google-auth,google-auth-oauthlib
+requirements = python3,kivy,kivymd,sqlalchemy,aiohttp,multidict,yarl,frozenlist,aiosignal,attrs,propcache,requests,python-dotenv,python-dateutil,apscheduler,tzlocal,cryptography,keyring,google-auth,google-auth-oauthlib,requests-oauthlib,oauthlib
 
 
 # Evita usar el recipe legacy de SQLAlchemy (descarga en pypi.python.org -> 404)
