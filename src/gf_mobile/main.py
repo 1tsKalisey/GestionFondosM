@@ -33,6 +33,7 @@ import threading
 import asyncio
 import traceback
 import os
+import tempfile
 
 # Importar las pantallas
 from gf_mobile.ui.screens.login_screen import LoginScreen
@@ -300,18 +301,24 @@ def main():
         app.run()
     except Exception:
         tb = traceback.format_exc()
-        # Intentar escribir el traceback en almacenamiento accesible del dispositivo
-        try:
-            log_path = os.path.join("/sdcard", "gestionfondosm_crash.log")
-            with open(log_path, "w", encoding="utf-8") as f:
-                f.write(tb)
-        except Exception:
-            # Si no se puede escribir en /sdcard, intentar directorio local
+        # Evitar /sdcard raíz en Android 13+ (scoped storage).
+        crash_paths = []
+        android_argument = os.environ.get("ANDROID_ARGUMENT")
+        if android_argument:
+            crash_paths.append(os.path.join(android_argument, "gestionfondosm_crash.log"))
+        crash_paths.extend(
+            [
+                "/sdcard/Download/gestionfondosm_crash.log",
+                os.path.join(tempfile.gettempdir(), "gestionfondosm_crash.log"),
+            ]
+        )
+        for log_path in crash_paths:
             try:
-                with open("/tmp/gestionfondosm_crash.log", "w", encoding="utf-8") as f:
+                with open(log_path, "w", encoding="utf-8") as f:
                     f.write(tb)
+                break
             except Exception:
-                pass
+                continue
         print("Unhandled exception during app startup:\n", tb)
 
 

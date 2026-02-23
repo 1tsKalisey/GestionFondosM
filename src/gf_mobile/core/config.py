@@ -10,6 +10,14 @@ from typing import Any
 from dotenv import dotenv_values
 
 
+def _default_db_path() -> Path:
+    """Default DB path, Android-safe when running under python-for-android."""
+    android_argument = os.environ.get("ANDROID_ARGUMENT")
+    if android_argument:
+        return Path(android_argument) / ".config" / "gestionfondos_mobile" / "app.db"
+    return Path.home() / ".config" / "gestionfondos_mobile" / "app.db"
+
+
 @dataclass
 class Settings:
     """Configuración de la aplicación."""
@@ -36,7 +44,7 @@ class Settings:
     FIREBASE_AUTH_URL: str = "https://identitytoolkit.googleapis.com/v1"
 
     # Database
-    DB_PATH: Path = Path.home() / ".config" / "gestionfondos_mobile" / "app.db"
+    DB_PATH: Path = _default_db_path()
 
     # Sync
     SYNC_INTERVAL_MINUTES: int = 15
@@ -115,7 +123,7 @@ def get_settings() -> Settings:
             str(
                 values.get(
                     "GF_DB_PATH",
-                    Path.home() / ".config" / "gestionfondos_mobile" / "app.db",
+                    _default_db_path(),
                 )
             )
         ),
