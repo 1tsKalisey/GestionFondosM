@@ -482,6 +482,13 @@ class GestionFondosMApp(MDApp):
 
 def main():
     """Punto de entrada principal"""
+    # Fijar tamaño de ventana en PC (simulación reducida Nothing Phone 3a Pro).
+    try:
+        from kivy.core.window import Window
+        if not os.environ.get("ANDROID_ARGUMENT"):
+            Window.size = (405, 897)
+    except Exception:
+        pass
     app = GestionFondosMApp()
     try:
         app.run()
