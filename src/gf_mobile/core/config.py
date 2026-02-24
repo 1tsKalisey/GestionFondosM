@@ -38,6 +38,7 @@ class Settings:
     GOOGLE_OAUTH_CLIENT_ID: str = ""
     GOOGLE_OAUTH_CLIENT_SECRET: str = ""
     GOOGLE_OAUTH_REDIRECT_URI: str = "http://localhost:8080"
+    GOOGLE_OAUTH_DEVICE_CLIENT_ID: str = ""
 
     # Firestore URLs (REST API)
     FIRESTORE_API_URL: str = "https://firestore.googleapis.com/v1"
@@ -141,6 +142,9 @@ def get_settings() -> Settings:
         GOOGLE_OAUTH_CLIENT_SECRET=str(values.get("GOOGLE_OAUTH_CLIENT_SECRET", "")),
         GOOGLE_OAUTH_REDIRECT_URI=str(
             values.get("GOOGLE_OAUTH_REDIRECT_URI", "http://localhost:8080")
+        ),
+        GOOGLE_OAUTH_DEVICE_CLIENT_ID=str(
+            values.get("GOOGLE_OAUTH_DEVICE_CLIENT_ID", "")
         ),
         FIRESTORE_API_URL=str(
             values.get("FIRESTORE_API_URL", "https://firestore.googleapis.com/v1")

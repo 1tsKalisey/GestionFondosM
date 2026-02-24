@@ -14,9 +14,7 @@ from typing import Optional, List, Dict, Any
 from sqlalchemy.orm import Session
 
 from gf_mobile.core.exceptions import SyncError
-from gf_mobile.persistence.models import (
-    Account, Category, Budget, Transaction, SyncState, AppliedEvent
-)
+from gf_mobile.persistence.models import Account, Category, Budget, Transaction, SyncState
 from gf_mobile.sync.firestore_client import FirestoreClient
 
 
@@ -132,15 +130,29 @@ class InitialSyncService:
             
             count = 0
             for cat_data in categories_data:
-                cat_id = cat_data.get("id")
-                if session.query(Category).filter(Category.id == cat_id).first():
-                    continue  # Ya existe
+                remote_sync_id = str(cat_data.get("sync_id") or cat_data.get("id") or "")
+                name = cat_data.get("name")
+                if not name:
+                    continue
+                existing = None
+                if remote_sync_id:
+                    existing = session.query(Category).filter(
+                        Category.sync_id == remote_sync_id
+                    ).first()
+                if not existing:
+                    existing = session.query(Category).filter(
+                        Category.name == name
+                    ).first()
+                if existing:
+                    # Si ya existía por nombre, completar sync_id para mapear bien.
+                    if remote_sync_id and not existing.sync_id:
+                        existing.sync_id = remote_sync_id
+                    continue
                 
                 category = Category(
-                    id=cat_id,
-                    name=cat_data.get("name"),
+                    name=name,
                     budget_group=cat_data.get("budget_group", "Otros"),
-                    synced=True,
+                    sync_id=remote_sync_id or None,
                 )
                 session.add(category)
                 count += 1
@@ -161,10 +173,16 @@ class InitialSyncService:
                 budget_id = budget_data.get("id")
                 if session.query(Budget).filter(Budget.id == budget_id).first():
                     continue  # Ya existe
+                local_category_id = self._resolve_local_category_id(
+                    session, budget_data.get("category_id")
+                )
+                if local_category_id is None:
+                    # Presupuesto inválido sin categoría local mapeable.
+                    continue
                 
                 budget = Budget(
                     id=budget_id,
-                    category_id=budget_data.get("category_id"),
+                    category_id=local_category_id,
                     month=budget_data.get("month"),
                     amount=float(budget_data.get("amount", 0)),
                     synced=True,
@@ -188,11 +206,16 @@ class InitialSyncService:
                 tx_id = tx_data.get("id")
                 if session.query(Transaction).filter(Transaction.id == tx_id).first():
                     continue  # Ya existe
+                local_category_id = self._resolve_local_category_id(
+                    session, tx_data.get("category_id")
+                )
+                if local_category_id is None:
+                    continue
                 
                 transaction = Transaction(
                     id=tx_id,
                     account_id=tx_data.get("account_id"),
-                    category_id=tx_data.get("category_id"),
+                    category_id=local_category_id,
                     type=tx_data.get("type"),
                     amount=float(tx_data.get("amount", 0)),
                     currency=tx_data.get("currency", "EUR"),
@@ -207,6 +230,31 @@ class InitialSyncService:
             return count
         except Exception as e:
             raise SyncError(f"Error sincronizando transacciones: {str(e)}")
+
+    def _resolve_local_category_id(
+        self, session: Session, remote_category_id: Optional[Any]
+    ) -> Optional[int]:
+        """
+        Convierte category_id remoto (normalmente sync_id) a Category.id local.
+        """
+        if remote_category_id is None:
+            return None
+        remote_value = str(remote_category_id).strip()
+        if not remote_value:
+            return None
+
+        # Intentar por sync_id primero (payload de sync usa sync_id).
+        cat = session.query(Category).filter(Category.sync_id == remote_value).first()
+        if cat:
+            return cat.id
+
+        # Compatibilidad: si vino como id numérico local serializado.
+        if remote_value.isdigit():
+            cat = session.query(Category).filter(Category.id == int(remote_value)).first()
+            if cat:
+                return cat.id
+
+        return None
 
     def _mark_initial_sync_completed(self, session: Session) -> None:
         """Marca la sincronización inicial como completada."""

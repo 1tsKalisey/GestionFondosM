@@ -1,56 +1,73 @@
-"""
-Navigation bar compartida para todas las pantallas
+﻿"""
+Bottom navigation shared across screens.
 """
 
 from kivy.lang import Builder
+from kivy.properties import ObjectProperty, StringProperty
 from kivymd.uix.boxlayout import MDBoxLayout
-from kivymd.uix.button import MDFlatButton
 
 
 Builder.load_string(
     """
 <NavigationBar>:
     orientation: "horizontal"
-    spacing: "4dp"
-    padding: "4dp"
+    spacing: "0dp"
+    padding: "2dp", "2dp"
     size_hint_y: None
-    height: "52dp"
+    height: "56dp"
 
-    MDFlatButton:
-        text: "📊"
-        on_release: root.navigate_to('dashboard')
+    MDIconButton:
+        icon: "view-dashboard"
+        icon_size: "21sp"
+        theme_text_color: "Custom"
+        text_color: (0.09, 0.52, 0.66, 1) if root.current_screen == "dashboard" else (0.45, 0.47, 0.52, 1)
+        on_release: root.navigate_to("dashboard")
 
-    MDFlatButton:
-        text: "💳"
-        on_release: root.navigate_to('transactions')
+    MDIconButton:
+        icon: "swap-horizontal"
+        icon_size: "21sp"
+        theme_text_color: "Custom"
+        text_color: (0.09, 0.52, 0.66, 1) if root.current_screen == "transactions" else (0.45, 0.47, 0.52, 1)
+        on_release: root.navigate_to("transactions")
 
-    MDFlatButton:
-        text: "🏷️"
-        on_release: root.navigate_to('categories')
+    MDIconButton:
+        icon: "shape"
+        icon_size: "21sp"
+        theme_text_color: "Custom"
+        text_color: (0.09, 0.52, 0.66, 1) if root.current_screen == "categories" else (0.45, 0.47, 0.52, 1)
+        on_release: root.navigate_to("categories")
 
-    MDFlatButton:
-        text: "💰"
-        on_release: root.navigate_to('budgets')
+    MDIconButton:
+        icon: "wallet"
+        icon_size: "21sp"
+        theme_text_color: "Custom"
+        text_color: (0.09, 0.52, 0.66, 1) if root.current_screen == "budgets" else (0.45, 0.47, 0.52, 1)
+        on_release: root.navigate_to("budgets")
 
-    MDFlatButton:
-        text: "📈"
-        on_release: root.navigate_to('reports')
+    MDIconButton:
+        icon: "chart-bar"
+        icon_size: "21sp"
+        theme_text_color: "Custom"
+        text_color: (0.09, 0.52, 0.66, 1) if root.current_screen == "reports" else (0.45, 0.47, 0.52, 1)
+        on_release: root.navigate_to("reports")
 
-    MDFlatButton:
-        text: "⚙️"
-        on_release: root.navigate_to('sync_status')
+    MDIconButton:
+        icon: "account-circle"
+        icon_size: "21sp"
+        theme_text_color: "Custom"
+        text_color: (0.09, 0.52, 0.66, 1) if root.current_screen == "profile" else (0.45, 0.47, 0.52, 1)
+        on_release: root.navigate_to("profile")
     """
 )
 
 
 class NavigationBar(MDBoxLayout):
-    """Barra de navegación inferior para la app"""
+    """Bottom app navigation."""
 
-    def __init__(self, screen_manager=None, **kwargs):
-        super().__init__(**kwargs)
-        self.screen_manager = screen_manager
+    screen_manager = ObjectProperty(None)
+    current_screen = StringProperty("")
 
     def navigate_to(self, screen_name: str) -> None:
-        """Navega a la pantalla especificada"""
         if self.screen_manager:
             self.screen_manager.current = screen_name
+            self.current_screen = screen_name

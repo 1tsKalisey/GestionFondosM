@@ -13,6 +13,10 @@ from dataclasses import dataclass
 import importlib
 import importlib.util
 import asyncio
+import time
+import webbrowser
+from pathlib import Path
+from urllib.parse import urlparse
 
 from gf_mobile.core.config import get_settings
 from gf_mobile.core.exceptions import (
@@ -68,7 +72,9 @@ class AuthService:
     def __init__(self):
         self.settings = get_settings()
         self.tokens: Optional[AuthTokens] = None
+        self._current_user_email: Optional[str] = None
         self._keyring = self._load_keyring()
+        self._token_file = self._build_token_file()
         self._load_tokens_from_storage()
 
     def _load_keyring(self):
@@ -85,9 +91,42 @@ class AuthService:
         """Clave única para almacenamiento de tokens (keyring)"""
         return self.settings.TOKEN_STORAGE_KEY
 
+
+    def _build_token_file(self) -> Path:
+        """Ruta local para persistencia si keyring no esta disponible."""
+        return self.settings.DB_PATH.parent / "auth_tokens.json"
+
+    def _save_tokens_to_file(self, tokens: AuthTokens) -> None:
+        try:
+            self._token_file.parent.mkdir(parents=True, exist_ok=True)
+            self._token_file.write_text(
+                json.dumps(tokens.to_dict()),
+                encoding="utf-8",
+            )
+        except Exception as exc:
+            logger.warning(f"No se pudo guardar tokens en archivo: {exc}")
+
+    def _load_tokens_from_file(self) -> Optional[AuthTokens]:
+        if not self._token_file.exists():
+            return None
+        try:
+            data = json.loads(self._token_file.read_text(encoding="utf-8"))
+            return AuthTokens.from_dict(data)
+        except Exception as exc:
+            logger.warning(f"No se pudo leer tokens desde archivo: {exc}")
+            return None
+
+    def _clear_tokens_file(self) -> None:
+        try:
+            if self._token_file.exists():
+                self._token_file.unlink()
+        except Exception:
+            pass
+
     def _store_tokens_secure(self, tokens: AuthTokens) -> None:
         """Almacenar tokens de forma segura usando keyring del SO"""
         if self._keyring is None:
+            self._save_tokens_to_file(tokens)
             self.tokens = tokens
             return
         try:
@@ -99,13 +138,14 @@ class AuthService:
             logger.info("Tokens almacenados de forma segura")
         except Exception as e:
             logger.warning(f"No se pudo almacenar tokens de forma segura (keyring): {e}")
-            # Fallback: almacenar en memoria (menos seguro pero funcional)
+            # Fallback: archivo local + memoria
+            self._save_tokens_to_file(tokens)
             self.tokens = tokens
 
     def _load_tokens_from_storage(self) -> None:
         """Cargar tokens desde almacenamiento seguro"""
         if self._keyring is None:
-            self.tokens = None
+            self.tokens = self._load_tokens_from_file()
             return
         try:
             stored = self._keyring.get_password(
@@ -117,14 +157,21 @@ class AuthService:
                 self.tokens = AuthTokens.from_dict(data)
                 logger.info(f"Tokens cargados para usuario {self.tokens.user_id}")
             else:
-                logger.debug("No se encontraron tokens almacenados")
+                self.tokens = self._load_tokens_from_file()
+                if self.tokens:
+                    logger.info(
+                        f"Tokens cargados desde archivo para usuario {self.tokens.user_id}"
+                    )
+                else:
+                    logger.debug("No se encontraron tokens almacenados")
         except Exception as e:
             logger.debug(f"Error al cargar tokens: {e}")
-            self.tokens = None
+            self.tokens = self._load_tokens_from_file()
 
     def _clear_tokens_from_storage(self) -> None:
         """Limpiar tokens del almacenamiento"""
         if self._keyring is None:
+            self._clear_tokens_file()
             self.tokens = None
             return
         try:
@@ -132,6 +179,7 @@ class AuthService:
             logger.info("Tokens eliminados del almacenamiento")
         except Exception:
             pass  # Ignorar si no existen
+        self._clear_tokens_file()
 
     def _is_android(self) -> bool:
         return sys.platform == "android" or bool(os.environ.get("ANDROID_ARGUMENT"))
@@ -176,6 +224,7 @@ class AuthService:
                 tokens = self._extract_tokens(data or {}, email)
                 self._store_tokens_secure(tokens)
                 self.tokens = tokens
+                self._current_user_email = email
                 logger.info(f"Usuario registrado: {email}")
                 return tokens
 
@@ -224,6 +273,7 @@ class AuthService:
                 tokens = self._extract_tokens(data or {}, email)
                 self._store_tokens_secure(tokens)
                 self.tokens = tokens
+                self._current_user_email = email
                 logger.info(f"Sesion iniciada: {email}")
                 return tokens
 
@@ -311,9 +361,7 @@ class AuthService:
 
     def get_current_user_email(self) -> Optional[str]:
         """Obtener email del usuario autenticado (si está disponible)"""
-        # Firebase REST no devuelve email automáticamente; debe recuperarse de otra forma
-        # Por ahora retornar None; mejorar en siguiente versión
-        return None
+        return self._current_user_email
 
     def is_authenticated(self) -> bool:
         """Verificar si usuario está autenticado"""
@@ -323,6 +371,7 @@ class AuthService:
         """Cerrar sesión y limpiar tokens"""
         self._clear_tokens_from_storage()
         self.tokens = None
+        self._current_user_email = None
         logger.info("Sesión cerrada")
         
         # También limpiar sesión persistente
@@ -338,63 +387,150 @@ class AuthService:
         Iniciar sesion con Google de forma simple
         Usa google-auth-oauthlib para manejar el flujo automaticamente
         """
-        if self._is_android():
-            raise AuthError(
-                "Google Sign-In no esta soportado en Android en esta version. "
-                "Usa email/contrasena o implementa un flujo OAuth nativo."
-            )
         try:
-            from google_auth_oauthlib.flow import InstalledAppFlow
-            import google.auth.transport.requests
-            
-            # Configuracion del cliente OAuth de Google
-            # Necesitas crear esto en Google Cloud Console
-            client_id = self.settings.GOOGLE_OAUTH_CLIENT_ID
-            client_secret = self.settings.GOOGLE_OAUTH_CLIENT_SECRET
-            redirect_uri = self.settings.GOOGLE_OAUTH_REDIRECT_URI
+            if self._is_android():
+                id_token = await self._google_device_authorization_flow()
+            else:
+                from google_auth_oauthlib.flow import InstalledAppFlow
 
-            if not client_id or not client_secret:
-                raise AuthError(
-                    "Falta configurar GOOGLE_OAUTH_CLIENT_ID y GOOGLE_OAUTH_CLIENT_SECRET en .env"
-                )
+                client_id = self.settings.GOOGLE_OAUTH_CLIENT_ID
+                client_secret = self.settings.GOOGLE_OAUTH_CLIENT_SECRET
+                redirect_uri = self.settings.GOOGLE_OAUTH_REDIRECT_URI
 
-            client_config = {
-                "installed": {
-                    "client_id": client_id,
-                    "client_secret": client_secret,
-                    "auth_uri": "https://accounts.google.com/o/oauth2/auth",
-                    "token_uri": "https://oauth2.googleapis.com/token",
-                    "redirect_uris": [redirect_uri],
+                if not client_id or not client_secret:
+                    raise AuthError(
+                        "Falta configurar GOOGLE_OAUTH_CLIENT_ID y GOOGLE_OAUTH_CLIENT_SECRET en .env"
+                    )
+
+                client_config = {
+                    "installed": {
+                        "client_id": client_id,
+                        "client_secret": client_secret,
+                        "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+                        "token_uri": "https://oauth2.googleapis.com/token",
+                        "redirect_uris": [redirect_uri],
+                    }
                 }
-            }
-            
-            # Scopes necesarios para obtener informacion basica del usuario
-            scopes = ['openid', 'https://www.googleapis.com/auth/userinfo.email',
-                     'https://www.googleapis.com/auth/userinfo.profile']
-            
-            # Crear flujo de autenticacion
-            flow = InstalledAppFlow.from_client_config(client_config, scopes=scopes)
-            
-            # Ejecutar el flujo local (abre navegador automaticamente)
-            logger.info("Abriendo navegador para login de Google...")
-            credentials = await asyncio.to_thread(
-                flow.run_local_server, port=8080, prompt='consent'
-            )
-            
-            # Obtener ID token de Google
-            id_token = credentials.id_token
-            
-            if not id_token:
-                raise AuthError("No se pudo obtener ID token de Google")
-            
-            # Intercambiar ID token por tokens de Firebase
+                scopes = [
+                    "openid",
+                    "https://www.googleapis.com/auth/userinfo.email",
+                    "https://www.googleapis.com/auth/userinfo.profile",
+                ]
+                flow = InstalledAppFlow.from_client_config(client_config, scopes=scopes)
+                parsed_redirect = urlparse(redirect_uri)
+                if parsed_redirect.scheme != "http" or parsed_redirect.hostname not in {
+                    "localhost",
+                    "127.0.0.1",
+                }:
+                    raise AuthError(
+                        "GOOGLE_OAUTH_REDIRECT_URI debe ser loopback HTTP, por ejemplo: "
+                        "http://localhost:8080"
+                    )
+                host = parsed_redirect.hostname or "localhost"
+                port = parsed_redirect.port or 8080
+
+                logger.info("Abriendo navegador para login de Google...")
+                credentials = await asyncio.to_thread(
+                    flow.run_local_server,
+                    host=host,
+                    port=port,
+                    open_browser=True,
+                    prompt="consent",
+                )
+                id_token = credentials.id_token
+                if not id_token:
+                    raise AuthError("No se pudo obtener ID token de Google")
+
             return await self._exchange_google_token_for_firebase(id_token)
-            
         except ImportError:
             raise AuthError("Falta instalar: pip install google-auth-oauthlib")
         except Exception as e:
             logger.error(f"Error en Google Sign-In: {e}")
             raise AuthError(f"Error al iniciar sesion con Google: {e}")
+
+    async def _google_device_authorization_flow(self) -> str:
+        """
+        Flujo OAuth para Android usando navegador + device authorization grant.
+        """
+        client_id = (
+            self.settings.GOOGLE_OAUTH_DEVICE_CLIENT_ID
+            or self.settings.GOOGLE_OAUTH_CLIENT_ID
+        )
+        if not client_id:
+            raise AuthError(
+                "Configura GOOGLE_OAUTH_DEVICE_CLIENT_ID "
+                "(o GOOGLE_OAUTH_CLIENT_ID) para login Google en Android"
+            )
+
+        scope = "openid email profile"
+        status, data, text = await request_json(
+            "POST",
+            "https://oauth2.googleapis.com/device/code",
+            data={"client_id": client_id, "scope": scope},
+            timeout=15,
+        )
+        if status != 200 or not data:
+            error_msg = (data or {}).get("error", text)
+            raise AuthError(f"No se pudo iniciar login Google en Android: {error_msg}")
+
+        device_code = (data or {}).get("device_code", "")
+        expires_in = int((data or {}).get("expires_in", 1800))
+        interval = int((data or {}).get("interval", 5))
+        verification_uri = (data or {}).get("verification_uri", "")
+        verification_uri_complete = (data or {}).get("verification_uri_complete", "")
+        user_code = (data or {}).get("user_code", "")
+
+        if not device_code:
+            raise AuthError("Google no devolvio device_code para Android")
+
+        open_url = verification_uri_complete or verification_uri
+        if open_url:
+            logger.info("Abriendo navegador en Android para autenticar Google")
+            await asyncio.to_thread(webbrowser.open, open_url, 1)
+        else:
+            raise AuthError("Google no devolvio URL de verificacion para Android")
+
+        logger.info(
+            "Completa el login en navegador. verification_uri=%s user_code=%s",
+            verification_uri,
+            user_code,
+        )
+
+        deadline = time.monotonic() + expires_in
+        while time.monotonic() < deadline:
+            await asyncio.sleep(max(1, interval))
+            poll_status, poll_data, poll_text = await request_json(
+                "POST",
+                "https://oauth2.googleapis.com/token",
+                data={
+                    "client_id": client_id,
+                    "device_code": device_code,
+                    "grant_type": "urn:ietf:params:oauth:grant-type:device_code",
+                },
+                timeout=15,
+            )
+            if poll_status == 200 and poll_data:
+                id_token = poll_data.get("id_token", "")
+                if not id_token:
+                    raise AuthError("Google no devolvio id_token en Android")
+                return id_token
+
+            poll_error = (poll_data or {}).get("error", "")
+            if poll_error == "authorization_pending":
+                continue
+            if poll_error == "slow_down":
+                interval += 5
+                continue
+            if poll_error == "expired_token":
+                raise AuthError("Tiempo agotado al autenticar con Google")
+            if poll_error == "access_denied":
+                raise AuthError("Login con Google cancelado por el usuario")
+            if poll_error:
+                raise AuthError(f"Error OAuth Google en Android: {poll_error}")
+            if poll_status >= 400:
+                raise AuthError(f"Error OAuth Google en Android: {poll_text}")
+
+        raise AuthError("No se completo el login Google en el tiempo esperado")
 
     async def _exchange_google_token_for_firebase(self, google_id_token: str) -> AuthTokens:
         """Intercambiar ID token de Google por tokens de Firebase"""
@@ -417,6 +553,7 @@ class AuthService:
                 tokens = self._extract_tokens(data or {}, email)
                 self._store_tokens_secure(tokens)
                 self.tokens = tokens
+                self._current_user_email = email
                 logger.info(f"Sesion iniciada con Google: {email}")
                 return tokens
 

@@ -1,19 +1,17 @@
-"""
-ReportsScreen - Reportes e informes financieros
+﻿"""
+Reports screen.
 """
 
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from kivy.lang import Builder
 from kivy.properties import StringProperty
 from kivy.uix.screenmanager import Screen
 from kivy.uix.scrollview import ScrollView
-from kivymd.uix.boxlayout import MDBoxLayout
 from kivymd.uix.button import MDRaisedButton
-from kivymd.uix.textfield import MDTextField
-from kivymd.uix.label import MDLabel
-from kivymd.uix.list import MDList, OneLineListItem
-from kivymd.uix.card import MDCard
+from kivymd.uix.list import OneLineListItem
+
+from gf_mobile.ui.navigation import NavigationBar
 
 
 Builder.load_string(
@@ -23,68 +21,56 @@ Builder.load_string(
 
     MDBoxLayout:
         orientation: "vertical"
-        padding: "16dp"
-        spacing: "12dp"
+        padding: "12dp"
+        spacing: "8dp"
 
-        # Header
         MDBoxLayout:
-            orientation: "horizontal"
             size_hint_y: None
-            height: "48dp"
+            height: "42dp"
 
             MDLabel:
                 text: "Reportes"
                 font_style: "H6"
-                halign: "left"
+                bold: True
 
             MDRaisedButton:
                 text: "Actualizar"
                 size_hint_x: None
-                width: "100dp"
+                width: "110dp"
                 on_release: root.refresh()
 
-        # Rango de fechas
         MDCard:
-            orientation: "horizontal"
-            padding: "12dp"
+            orientation: "vertical"
+            padding: "10dp"
             spacing: "8dp"
-            size_hint_y: None
-            height: "60dp"
-            elevation: 1
+            adaptive_height: True
 
             MDTextField:
                 id: report_start
-                hint_text: "Desde (YYYY-MM-DD)"
+                hint_text: "Desde YYYY-MM-DD"
                 mode: "rectangle"
-                size_hint_x: 0.5
 
             MDTextField:
                 id: report_end
-                hint_text: "Hasta (YYYY-MM-DD)"
+                hint_text: "Hasta YYYY-MM-DD"
                 mode: "rectangle"
-                size_hint_x: 0.5
 
-        # Resumen gasto por categoría
         ScrollView:
             MDBoxLayout:
                 orientation: "vertical"
-                spacing: "12dp"
+                spacing: "10dp"
                 size_hint_y: None
                 height: self.minimum_height
-                padding: "0dp", "12dp"
 
                 MDCard:
                     orientation: "vertical"
-                    padding: "12dp"
-                    spacing: "8dp"
-                    size_hint_y: None
+                    padding: "10dp"
                     adaptive_height: True
-                    elevation: 2
 
                     MDLabel:
-                        text: "Resumen por categoría"
-                        font_style: "Body2"
+                        text: "Por categoria"
                         bold: True
+                        font_style: "Body2"
                         size_hint_y: None
                         height: "24dp"
 
@@ -93,16 +79,13 @@ Builder.load_string(
 
                 MDCard:
                     orientation: "vertical"
-                    padding: "12dp"
-                    spacing: "8dp"
-                    size_hint_y: None
+                    padding: "10dp"
                     adaptive_height: True
-                    elevation: 2
 
                     MDLabel:
-                        text: "Resumen presupuestario"
-                        font_style: "Body2"
+                        text: "Por grupo presupuestario"
                         bold: True
+                        font_style: "Body2"
                         size_hint_y: None
                         height: "24dp"
 
@@ -113,37 +96,18 @@ Builder.load_string(
             text: root.status_message
             theme_text_color: "Hint"
             halign: "center"
+            text_size: self.width, None
+            max_lines: 2
+            shorten: True
+            shorten_from: "right"
 
-        # Barra de navegación
-        MDBoxLayout:
-            orientation: "horizontal"
-            spacing: "4dp"
-            padding: "4dp"
-            size_hint_y: None
-            height: "52dp"
-
-            MDFlatButton:
-                text: "📊 Dashboard"
-                on_release: root.manager.current = 'dashboard'
-
-            MDFlatButton:
-                text: "💳 Transacciones"
-                on_release: root.manager.current = 'transactions'
-
-            MDFlatButton:
-                text: "🏷️ Categorías"
-                on_release: root.manager.current = 'categories'
-
-            MDFlatButton:
-                text: "💰 Presupuestos"
-                on_release: root.manager.current = 'budgets'
+        NavigationBar:
+            id: nav_bar
     """
 )
 
 
 class ReportsScreen(Screen):
-    """Pantalla de reportes e informes."""
-
     status_message = StringProperty("")
 
     def __init__(self, **kwargs):
@@ -154,118 +118,89 @@ class ReportsScreen(Screen):
         self.report_service = None
 
     def on_enter(self):
-        """Se llama cuando la pantalla se muestra"""
-        # Establecer fechas por defecto (último mes)
+        if "nav_bar" in self.ids:
+            self.ids.nav_bar.screen_manager = self.manager
+            self.ids.nav_bar.current_screen = "reports"
         today = datetime.now()
-        from datetime import timedelta
         last_month = today - timedelta(days=30)
-
         self.ids.report_start.text = last_month.strftime("%Y-%m-%d")
         self.ids.report_end.text = today.strftime("%Y-%m-%d")
-
         self.refresh()
 
     def refresh(self) -> None:
-        """Recarga los reportes"""
         try:
             if not self.transaction_service or not self.category_service:
                 self.status_message = "Servicios no configurados"
                 return
 
-            # Obtener fechas
             start_text = self.ids.report_start.text.strip()
             end_text = self.ids.report_end.text.strip()
-
             if not start_text or not end_text:
-                self.status_message = "Ingrese el rango de fechas"
+                self.status_message = "Ingrese rango de fechas"
                 return
 
             start_date = datetime.fromisoformat(start_text)
             end_date = datetime.fromisoformat(end_text)
-
-            # Obtener transacciones
             transactions = self.transaction_service.list_all(limit=500)
-            range_tx = [
-                tx for tx in transactions
-                if start_date <= tx.occurred_at <= end_date
-            ]
+            range_tx = [tx for tx in transactions if start_date <= tx.occurred_at <= end_date]
 
-            # Generar resumen por categoría
             self._generate_category_summary(range_tx)
-
-            # Generar resumen presupuestario
             self._generate_budget_summary(range_tx)
-
-            self.status_message = f"{len(range_tx)} transacciones en el rango"
-
+            self.status_message = f"{len(range_tx)} movimientos en rango"
         except ValueError:
-            self.status_message = "Fechas inválidas (use YYYY-MM-DD)"
+            self.status_message = "Fechas invalidas"
         except Exception as exc:
-            self.status_message = f"Error: {str(exc)}"
+            self.status_message = self._short_error(exc)
+
+    @staticmethod
+    def _short_error(exc: Exception) -> str:
+        message = str(exc).replace("\n", " ").strip()
+        if len(message) > 120:
+            message = f"{message[:117]}..."
+        return f"Error: {message}"
 
     def _generate_category_summary(self, transactions) -> None:
-        """Genera resumen de gastos por categoría"""
         try:
             self.ids.category_summary.clear_widgets()
-
-            # Agrupar por categoría
             category_totals = {}
             for tx in transactions:
                 if tx.type != "gasto":
                     continue
-
-                cat_name = "Sin categoría"
-                if hasattr(tx, 'category') and tx.category:
+                cat_name = "Sin categoria"
+                if hasattr(tx, "category") and tx.category:
                     cat_name = tx.category.name
-
-                if cat_name not in category_totals:
-                    category_totals[cat_name] = 0
+                category_totals.setdefault(cat_name, 0)
                 category_totals[cat_name] += tx.amount
 
-            # Crear items
             total_expenses = sum(category_totals.values())
             for cat_name in sorted(category_totals.keys()):
                 amount = category_totals[cat_name]
                 pct = (amount / total_expenses * 100) if total_expenses > 0 else 0
-
-                item_text = f"{cat_name}: € {amount:.2f} ({pct:.1f}%)"
-                self.ids.category_summary.add_widget(OneLineListItem(text=item_text))
-
+                self.ids.category_summary.add_widget(
+                    OneLineListItem(text=f"{cat_name}: EUR {amount:.2f} ({pct:.1f}%)")
+                )
         except Exception as exc:
-            self.status_message = f"Error en resumen categorías: {str(exc)}"
+            self.status_message = self._short_error(exc)
 
     def _generate_budget_summary(self, transactions) -> None:
-        """Genera resumen presupuestario (Necesidades, Ocio, Ahorro)"""
         try:
             self.ids.budget_summary.clear_widgets()
-
-            # Agrupar por grupo presupuestario
-            budget_groups = {
-                "Necesidades": 0,
-                "Ocio/Deseos": 0,
-                "Ahorro/Deuda": 0,
-                "Otros": 0,
-            }
+            budget_groups = {"Necesidades": 0, "Ocio/Deseos": 0, "Ahorro/Deuda": 0, "Otros": 0}
 
             for tx in transactions:
                 if tx.type != "gasto":
                     continue
-
                 group = "Otros"
-                if hasattr(tx, 'category') and tx.category:
+                if hasattr(tx, "category") and tx.category:
                     group = tx.category.budget_group or "Otros"
-
                 if group in budget_groups:
                     budget_groups[group] += tx.amount
 
-            # Crear items
             total = sum(budget_groups.values())
-            for group_name in budget_groups.keys():
-                amount = budget_groups[group_name]
+            for group_name, amount in budget_groups.items():
                 pct = (amount / total * 100) if total > 0 else 0
-
-                item_text = f"{group_name}: € {amount:.2f} ({pct:.1f}%)"
-                self.ids.budget_summary.add_widget(OneLineListItem(text=item_text))
-
+                self.ids.budget_summary.add_widget(
+                    OneLineListItem(text=f"{group_name}: EUR {amount:.2f} ({pct:.1f}%)")
+                )
         except Exception as exc:
-            self.status_message = f"Error en resumen presupuestario: {str(exc)}"
+            self.status_message = self._short_error(exc)

@@ -1,22 +1,19 @@
 """
-TransactionsScreen - Gestión completa de transacciones con filtros
+TransactionsScreen - Gestion de movimientos.
 """
 
-from typing import List, Dict, Any
-from datetime import datetime, timedelta
+from typing import Any, Dict, List, Optional
 
+from kivy.app import App
 from kivy.lang import Builder
-from kivy.properties import StringProperty
+from kivy.metrics import dp
+from kivy.properties import BooleanProperty, ListProperty, StringProperty
 from kivy.uix.screenmanager import Screen
-from kivy.uix.scrollview import ScrollView
-from kivymd.uix.list import MDList, OneLineListItem
-from kivymd.uix.boxlayout import MDBoxLayout
-from kivymd.uix.gridlayout import MDGridLayout
-from kivymd.uix.button import MDRaisedButton, MDFlatButton
-from kivymd.uix.label import MDLabel
+from kivy.uix.spinner import Spinner
+from kivymd.uix.button import MDFlatButton, MDRaisedButton
 from kivymd.uix.textfield import MDTextField
-from kivymd.uix.spinner import MDSpinner
-from kivymd.uix.card import MDCard
+
+from gf_mobile.ui.navigation import NavigationBar
 
 
 Builder.load_string(
@@ -26,240 +23,305 @@ Builder.load_string(
 
     MDBoxLayout:
         orientation: "vertical"
-        padding: "16dp"
-        spacing: "12dp"
+        padding: "12dp"
+        spacing: "8dp"
 
-        # Header
         MDBoxLayout:
-            orientation: "horizontal"
             size_hint_y: None
-            height: "48dp"
-            spacing: "8dp"
+            height: "42dp"
 
             MDLabel:
-                text: "Transacciones"
+                text: "Movimientos"
                 font_style: "H6"
-                halign: "left"
+                bold: True
 
             MDRaisedButton:
-                text: "+ Nueva"
+                text: "+ Nuevo"
                 size_hint_x: None
-                width: "100dp"
+                width: "96dp"
+                md_bg_color: root.accent_color
                 on_release: root.manager.current = 'add_transaction'
 
-        # Formulario de filtros
         MDCard:
             orientation: "vertical"
-            padding: "12dp"
-            spacing: "8dp"
-            size_hint_y: None
-            height: "180dp"
-            elevation: 1
+            padding: "10dp"
+            spacing: "10dp"
+            adaptive_height: True
+            md_bg_color: root.card_bg_color
+
+            MDTextField:
+                id: filter_date_from
+                hint_text: "Desde YYYY-MM-DD"
+                mode: "rectangle"
+
+            MDTextField:
+                id: filter_date_to
+                hint_text: "Hasta YYYY-MM-DD"
+                mode: "rectangle"
 
             MDBoxLayout:
-                orientation: "horizontal"
-                spacing: "8dp"
                 size_hint_y: None
-                height: "48dp"
+                height: "44dp"
+                spacing: "8dp"
 
-                MDTextField:
-                    id: filter_date_from
-                    hint_text: "Desde (YYYY-MM-DD)"
-                    mode: "rectangle"
-                    size_hint_x: 0.4
+                MDLabel:
+                    text: "Tipo"
+                    size_hint_x: None
+                    width: "56dp"
+                    theme_text_color: "Hint"
 
-                MDTextField:
-                    id: filter_date_to
-                    hint_text: "Hasta (YYYY-MM-DD)"
-                    mode: "rectangle"
-                    size_hint_x: 0.4
+                Spinner:
+                    id: type_spinner
+                    text: root.type_display
+                    values: ("Todos", "ingreso", "gasto", "transferencia")
+                    size_hint_y: None
+                    height: "40dp"
+                    background_normal: ""
+                    background_color: root.accent_color
+                    color: (1, 1, 1, 1)
+                    on_text: root.on_type_selected(self.text)
+
+            MDBoxLayout:
+                size_hint_y: None
+                height: "40dp"
+                spacing: "8dp"
 
                 MDFlatButton:
-                    text: "Aplicar"
-                    on_release: root.apply_filters()
+                    text: root.categories_button_text
+                    theme_text_color: "Custom"
+                    text_color: root.accent_color
+                    on_release: root.toggle_categories()
+
+                MDFlatButton:
+                    text: "Ocultar" if root.categories_expanded else "Mostrar"
+                    on_release: root.toggle_categories()
+
+            ScrollView:
+                size_hint_y: None
+                height: "124dp" if root.categories_expanded else "0dp"
+                opacity: 1 if root.categories_expanded else 0
+                do_scroll_x: False
+
+                GridLayout:
+                    id: categories_selector
+                    cols: 5
+                    col_force_default: True
+                    col_default_width: (self.width - self.padding[0] - self.padding[2] - self.spacing[0] * 4) / 5
+                    spacing: "4dp"
+                    padding: "4dp", "2dp", "4dp", "2dp"
+                    size_hint_x: 1
+                    size_hint_y: None
+                    height: self.minimum_height
 
             MDBoxLayout:
-                orientation: "horizontal"
-                spacing: "8dp"
                 size_hint_y: None
-                height: "48dp"
+                height: "46dp"
+                spacing: "8dp"
 
-                MDSpinner:
-                    id: filter_type
-                    text: "Tipo"
-                    values: ("Todas", "gasto", "ingreso", "transferencia")
-                    size_hint_x: 0.3
+                MDTextField:
+                    id: filter_amount_min
+                    hint_text: "Precio min"
+                    input_filter: "float"
+                    mode: "rectangle"
 
-                MDSpinner:
-                    id: filter_category
-                    text: "Categoría"
-                    values: ("Todas",)
-                    size_hint_x: 0.3
+                MDTextField:
+                    id: filter_amount_max
+                    hint_text: "Precio max"
+                    input_filter: "float"
+                    mode: "rectangle"
+
+            MDBoxLayout:
+                size_hint_y: None
+                height: "40dp"
+                spacing: "8dp"
+
+                MDRaisedButton:
+                    text: "Aplicar"
+                    md_bg_color: root.accent_color
+                    on_release: root.apply_filters()
 
                 MDFlatButton:
                     text: "Limpiar"
                     on_release: root.clear_filters()
-
-        # Lista de transacciones
-        ScrollView:
-            MDList:
-                id: tx_list
 
         MDLabel:
             text: root.status_message
             halign: "center"
             theme_text_color: "Hint"
             font_style: "Caption"
+            text_size: self.width, None
+            max_lines: 2
+            shorten: True
+            shorten_from: "right"
 
-        # Barra de navegación
-        MDBoxLayout:
-            orientation: "horizontal"
-            spacing: "4dp"
-            padding: "4dp"
-            size_hint_y: None
-            height: "52dp"
-
-            MDFlatButton:
-                text: "📊 Dashboard"
-                on_release: root.manager.current = 'dashboard'
-
-            MDFlatButton:
-                text: "🏷️ Categorías"
-                on_release: root.manager.current = 'categories'
-
-            MDFlatButton:
-                text: "💰 Presupuestos"
-                on_release: root.manager.current = 'budgets'
-
-            MDFlatButton:
-                text: "📈 Reportes"
-                on_release: root.manager.current = 'reports'
-
-            MDFlatButton:
-                text: "🚪 Salir"
-                on_release: root.on_logout()
+        NavigationBar:
+            id: nav_bar
     """
 )
 
 
 class TransactionsScreen(Screen):
-    """Pantalla de listado y gestión de transacciones con filtros."""
-
     status_message = StringProperty("")
+    type_display = StringProperty("Todos")
+    categories_button_text = StringProperty("Categorias: todas")
+    categories_expanded = BooleanProperty(False)
+    accent_color = ListProperty([0.09, 0.52, 0.66, 1])
+    card_bg_color = ListProperty([0.97, 0.99, 1, 1])
+    chip_active_bg = ListProperty([0.09, 0.52, 0.66, 1])
+    chip_active_text = ListProperty([1, 1, 1, 1])
+    chip_inactive_bg = ListProperty([0.88, 0.93, 0.97, 1])
+    chip_inactive_text = ListProperty([0.2, 0.3, 0.38, 1])
 
     def __init__(self, transaction_service=None, category_service=None, **kwargs):
         super().__init__(**kwargs)
         self.transaction_service = transaction_service
         self.category_service = category_service
-        self.current_filter = {}
+        self.current_filter: Dict[str, Any] = {}
+        self.selected_categories: List[str] = []
+        self.category_buttons: Dict[str, MDRaisedButton] = {}
+        self.selected_type: Optional[str] = None
 
     def on_enter(self):
-        """Se llama cuando la pantalla se muestra"""
-        self.refresh()
+        self._apply_theme_colors()
+        if "nav_bar" in self.ids:
+            self.ids.nav_bar.screen_manager = self.manager
+            self.ids.nav_bar.current_screen = "transactions"
         self._load_categories()
+        self.status_message = "Define filtros y pulsa Aplicar"
 
-    def _load_categories(self) -> None:
-        """Carga las categorías en el spinner de filtro"""
-        try:
-            if self.category_service:
-                categories = self.category_service.list_all()
-                spinner_values = ["Todas"] + [cat.name for cat in categories]
-                self.ids.filter_category.values = tuple(spinner_values)
-        except Exception as e:
-            self.status_message = f"Error cargando categorías: {str(e)}"
+    def on_type_selected(self, label: str) -> None:
+        self.type_display = label
+        value = label.strip().lower()
+        self.selected_type = None if value == "todos" else value
 
-    def refresh(self) -> None:
-        """Recarga la lista de transacciones con filtros actuales"""
-        self.ids.tx_list.clear_widgets()
-        if not self.transaction_service:
-            self.status_message = "TransactionService no configurado"
-            return
-
-        try:
-            transactions = self.transaction_service.list_all(limit=100)
-            
-            # Aplicar filtros
-            filtered_txs = self._apply_filters_to_list(transactions)
-            
-            # Mostrar transacciones
-            for tx in filtered_txs:
-                category_name = tx.category.name if hasattr(tx, 'category') and tx.category else "N/A"
-                merchant = tx.merchant or "N/A"
-                label = f"{tx.occurred_at.date()} · {tx.type} · €{tx.amount:.2f} · {category_name}"
-                item = OneLineListItem(text=label)
-                self.ids.tx_list.add_widget(item)
-
-            self.status_message = f"{len(filtered_txs)} transacciones"
-        except Exception as e:
-            self.status_message = f"Error: {str(e)}"
+    def toggle_categories(self) -> None:
+        self.categories_expanded = not self.categories_expanded
 
     def apply_filters(self) -> None:
-        """Aplica los filtros y recarga la lista"""
-        date_from = self.ids.filter_date_from.text
-        date_to = self.ids.filter_date_to.text
-        tx_type = self.ids.filter_type.text
-        category = self.ids.filter_category.text
+        amount_min_text = self.ids.filter_amount_min.text.strip()
+        amount_max_text = self.ids.filter_amount_max.text.strip()
+        try:
+            amount_min = float(amount_min_text) if amount_min_text else None
+        except ValueError:
+            amount_min = None
+        try:
+            amount_max = float(amount_max_text) if amount_max_text else None
+        except ValueError:
+            amount_max = None
 
         self.current_filter = {
-            "date_from": date_from,
-            "date_to": date_to,
-            "type": tx_type if tx_type != "Todas" else None,
-            "category": category if category != "Todas" else None,
+            "date_from": self.ids.filter_date_from.text.strip(),
+            "date_to": self.ids.filter_date_to.text.strip(),
+            "type": self.selected_type,
+            "categories": list(self.selected_categories),
+            "amount_min": amount_min,
+            "amount_max": amount_max,
         }
-        self.refresh()
+        try:
+            results_screen = self.manager.get_screen("transactions_results")
+            results_screen.set_filters(self.current_filter)
+            self.manager.current = "transactions_results"
+            self.status_message = "Filtros aplicados"
+        except Exception as exc:
+            self.status_message = self._short_error(exc)
 
     def clear_filters(self) -> None:
-        """Limpia todos los filtros"""
         self.ids.filter_date_from.text = ""
         self.ids.filter_date_to.text = ""
-        self.ids.filter_type.text = "Tipo"
-        self.ids.filter_category.text = "Categoría"
+        self.ids.filter_amount_min.text = ""
+        self.ids.filter_amount_max.text = ""
+        self.type_display = "Todos"
+        self.ids.type_spinner.text = "Todos"
+        self.selected_type = None
+        for name, button in self.category_buttons.items():
+            self._set_category_button_style(button, active=False)
+        self.selected_categories = []
+        self._refresh_selected_categories_label()
         self.current_filter = {}
-        self.refresh()
+        self.status_message = "Filtros limpiados"
 
-    def _apply_filters_to_list(self, transactions: List[Any]) -> List[Any]:
-        """Aplica los filtros actuales a una lista de transacciones"""
-        result = transactions
+    def _load_categories(self) -> None:
+        container = self.ids.categories_selector
+        container.clear_widgets()
+        self.category_buttons.clear()
+        try:
+            if not self.category_service:
+                self.selected_categories = []
+                self.categories_button_text = "Categorias: sin datos"
+                return
+            categories = self.category_service.list_all()
+            names = sorted({c.name for c in categories if getattr(c, "name", None)})
+            for name in names:
+                button = MDRaisedButton(
+                    text=name,
+                    size_hint_y=None,
+                    size_hint_x=1,
+                    font_size="12sp",
+                    on_release=lambda _btn, cat=name: self._toggle_category(cat),
+                )
+                button.bind(
+                    width=lambda inst, value: setattr(inst, "height", max(dp(34), value * 0.42))
+                )
+                is_active = name in self.selected_categories
+                self._set_category_button_style(button, active=is_active)
+                container.add_widget(button)
+                self.category_buttons[name] = button
+            self._refresh_selected_categories_label()
+        except Exception as exc:
+            self.status_message = self._short_error(exc)
 
-        # Filtro por tipo
-        if self.current_filter.get("type"):
-            result = [tx for tx in result if tx.type == self.current_filter["type"]]
+    def _toggle_category(self, category: str) -> None:
+        if category in self.selected_categories:
+            self.selected_categories = [c for c in self.selected_categories if c != category]
+            active = False
+        else:
+            self.selected_categories.append(category)
+            active = True
+        button = self.category_buttons.get(category)
+        if button:
+            self._set_category_button_style(button, active=active)
+        self._refresh_selected_categories_label()
 
-        # Filtro por categoría
-        if self.current_filter.get("category"):
-            result = [tx for tx in result if hasattr(tx, 'category') and tx.category and tx.category.name == self.current_filter["category"]]
+    def _refresh_selected_categories_label(self) -> None:
+        selected = sorted(self.selected_categories)
+        if not selected:
+            self.categories_button_text = "Categorias: todas"
+        elif len(selected) <= 2:
+            self.categories_button_text = "Categorias: " + ", ".join(selected)
+        else:
+            self.categories_button_text = f"Categorias: {len(selected)} seleccionadas"
 
-        # Filtro por fecha
-        if self.current_filter.get("date_from"):
-            try:
-                date_from = datetime.strptime(self.current_filter["date_from"], "%Y-%m-%d").date()
-                result = [tx for tx in result if tx.occurred_at.date() >= date_from]
-            except:
-                pass
+    def _set_category_button_style(self, button: MDRaisedButton, active: bool) -> None:
+        if active:
+            button.md_bg_color = self.chip_active_bg
+            button.text_color = self.chip_active_text
+        else:
+            button.md_bg_color = self.chip_inactive_bg
+            button.text_color = self.chip_inactive_text
 
-        if self.current_filter.get("date_to"):
-            try:
-                date_to = datetime.strptime(self.current_filter["date_to"], "%Y-%m-%d").date()
-                result = [tx for tx in result if tx.occurred_at.date() <= date_to]
-            except:
-                pass
-
-        return result
-
-    def on_logout(self) -> None:
-        """Cerrar sesión y volver al login."""
-        from kivy.app import App
+    def _apply_theme_colors(self) -> None:
         app = App.get_running_app()
-        if app and hasattr(app, 'auth_service'):
-            # Limpiar sesión
-            app.auth_service.sign_out()
-            # Volver a login
-            self.manager.current = 'login'
-            self.status_message = "Sesion cerrada"
+        is_dark = bool(app and getattr(app.theme_cls, "theme_style", "Light") == "Dark")
+        self.accent_color = [0.09, 0.52, 0.66, 1]
+        if is_dark:
+            self.card_bg_color = [0.14, 0.16, 0.20, 1]
+            self.chip_active_bg = [0.09, 0.52, 0.66, 1]
+            self.chip_active_text = [1, 1, 1, 1]
+            self.chip_inactive_bg = [0.24, 0.27, 0.32, 1]
+            self.chip_inactive_text = [0.88, 0.9, 0.94, 1]
+        else:
+            self.card_bg_color = [0.97, 0.99, 1, 1]
+            self.chip_active_bg = [0.09, 0.52, 0.66, 1]
+            self.chip_active_text = [1, 1, 1, 1]
+            self.chip_inactive_bg = [0.88, 0.93, 0.97, 1]
+            self.chip_inactive_text = [0.2, 0.3, 0.38, 1]
+
+    @staticmethod
+    def _short_error(exc: Exception) -> str:
+        message = str(exc).replace("\n", " ").strip()
+        if len(message) > 120:
+            message = f"{message[:117]}..."
+        return f"Error: {message}"
 
     def set_transactions(self, items: List[Dict[str, Any]]) -> None:
-        """Permite inyectar lista de transacciones ya procesada."""
-        self.ids.tx_list.clear_widgets()
-        for item in items:
-            self.ids.tx_list.add_widget(OneLineListItem(text=item.get("label", "")))
-        self.status_message = f"{len(items)} transacciones"
+        self.status_message = f"{len(items)} movimientos"

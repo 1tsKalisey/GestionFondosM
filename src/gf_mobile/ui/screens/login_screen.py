@@ -1,17 +1,10 @@
+﻿"""
+Login screen.
 """
-LoginScreen
-"""
-
-import os
-import sys
 
 from kivy.lang import Builder
-from kivy.properties import StringProperty, BooleanProperty
+from kivy.properties import BooleanProperty, StringProperty
 from kivy.uix.screenmanager import Screen
-from kivymd.uix.button import MDRaisedButton
-from kivymd.uix.textfield import MDTextField
-from kivymd.uix.label import MDLabel
-from kivymd.uix.boxlayout import MDBoxLayout
 
 
 Builder.load_string(
@@ -24,58 +17,72 @@ Builder.load_string(
         padding: "24dp"
         spacing: "16dp"
 
-        MDLabel:
-            text: root.title
-            halign: "center"
-            font_style: "H5"
-
-        MDTextField:
-            id: email
-            hint_text: "Email"
-            mode: "rectangle"
-            text: root.email
-            on_text: root.email = self.text
-
-        MDTextField:
-            id: password
-            hint_text: "Contrasena"
-            password: True
-            mode: "rectangle"
-            text: root.password
-            on_text: root.password = self.text
-
-        MDRaisedButton:
-            text: "Iniciar sesion"
-            pos_hint: {"center_x": 0.5}
-            on_release: root.on_login()
+        Widget:
+            size_hint_y: 0.1
 
         MDLabel:
-            text: "o"
-            halign: "center"
-            size_hint_y: 0.3
-
-        MDRaisedButton:
-            id: google_btn
-            text: "Iniciar sesion con Google"
-            pos_hint: {"center_x": 0.5}
-            md_bg_color: 0.26, 0.52, 0.96, 1
-            disabled: not root.google_login_available
-            opacity: 1 if root.google_login_available else 0.35
-            on_release: root.on_google_login()
+            text: "GestionFondos"
+            halign: "left"
+            font_style: "H4"
+            bold: True
 
         MDLabel:
-            id: status
+            text: "Controla gastos y sincroniza en segundos"
+            halign: "left"
+            theme_text_color: "Hint"
+            font_style: "Body2"
+            size_hint_y: None
+            height: "24dp"
+
+        MDCard:
+            orientation: "vertical"
+            padding: "16dp"
+            spacing: "12dp"
+            radius: [16, 16, 16, 16]
+
+            MDTextField:
+                id: email
+                hint_text: "Email"
+                mode: "rectangle"
+                text: root.email
+                on_text: root.email = self.text
+
+            MDTextField:
+                id: password
+                hint_text: "Contrasena"
+                password: True
+                mode: "rectangle"
+                text: root.password
+                on_text: root.password = self.text
+
+            MDRaisedButton:
+                text: "Entrar"
+                size_hint_y: None
+                height: "46dp"
+                on_release: root.on_login()
+
+            MDFlatButton:
+                text: "Continuar con Google"
+                disabled: not root.google_login_available
+                on_release: root.on_google_login()
+
+        MDLabel:
             text: root.status_message
             halign: "center"
             theme_text_color: "Error"
+            text_size: self.width, None
+            max_lines: 2
+            shorten: True
+            shorten_from: "right"
+
+        Widget:
     """
 )
 
 
 class LoginScreen(Screen):
-    """Pantalla de login."""
+    """Login view."""
 
-    title = StringProperty("GestionFondos")
     email = StringProperty("")
     password = StringProperty("")
     status_message = StringProperty("")
@@ -84,55 +91,50 @@ class LoginScreen(Screen):
     def __init__(self, auth_service=None, **kwargs):
         super().__init__(**kwargs)
         self.auth_service = auth_service
-        self.google_login_available = not (
-            sys.platform == "android" or bool(os.environ.get("ANDROID_ARGUMENT"))
-        )
 
     def on_login(self) -> None:
-        """Callback de login."""
         if not self.auth_service:
             self.status_message = "AuthService no configurado"
             return
         self.status_message = "Iniciando sesion..."
         try:
             import asyncio
+
             tokens = asyncio.run(self.auth_service.sign_in(self.email, self.password))
-            
-            # Crear sesión persistente (3 meses)
+
             from gf_mobile.core.session_manager import SessionManager
-            session_manager = SessionManager()
-            session_manager.create_session(tokens.user_id, self.email)
-            
+
+            SessionManager().create_session(tokens.user_id, self.email.strip())
+
             from kivy.app import App
+
             app = App.get_running_app()
             if app:
-                app.on_login_success(tokens.user_id)
+                app.on_login_success(tokens.user_id, just_logged_in=True)
             self.status_message = "Sesion iniciada"
         except Exception as exc:  # noqa: BLE001
             self.status_message = f"Error: {exc}"
 
     def on_google_login(self) -> None:
-        """Callback de login con Google."""
-        if not self.google_login_available:
-            self.status_message = "Google Sign-In no disponible en Android en esta version"
-            return
         if not self.auth_service:
             self.status_message = "AuthService no configurado"
             return
-        self.status_message = "Abriendo navegador para autenticacion con Google..."
+        self.status_message = "Abriendo navegador para Google..."
         try:
             import asyncio
+
             tokens = asyncio.run(self.auth_service.sign_in_with_google())
-            
-            # Crear sesión persistente (3 meses)
+
             from gf_mobile.core.session_manager import SessionManager
-            session_manager = SessionManager()
-            session_manager.create_session(tokens.user_id, self.email)
-            
+
+            google_email = self.auth_service.get_current_user_email()
+            SessionManager().create_session(tokens.user_id, google_email)
+
             from kivy.app import App
+
             app = App.get_running_app()
             if app:
-                app.on_login_success(tokens.user_id)
+                app.on_login_success(tokens.user_id, just_logged_in=True)
             self.status_message = "Sesion iniciada con Google"
         except Exception as exc:  # noqa: BLE001
             self.status_message = f"Error: {exc}"

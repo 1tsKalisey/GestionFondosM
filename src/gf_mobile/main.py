@@ -38,12 +38,15 @@ import tempfile
 # Importar las pantallas
 from gf_mobile.ui.screens.login_screen import LoginScreen
 from gf_mobile.ui.screens.transactions_screen import TransactionsScreen
+from gf_mobile.ui.screens.transactions_results_screen import TransactionsResultsScreen
 from gf_mobile.ui.screens.add_transaction_screen import AddTransactionScreen
 from gf_mobile.ui.screens.sync_status_screen import SyncStatusScreen
 from gf_mobile.ui.screens.dashboard_screen import DashboardScreen
 from gf_mobile.ui.screens.categories_screen import CategoriesScreen
 from gf_mobile.ui.screens.budgets_screen import BudgetsScreen
 from gf_mobile.ui.screens.reports_screen import ReportsScreen
+from gf_mobile.ui.screens.profile_screen import ProfileScreen
+from gf_mobile.ui.screens.quick_entry_screen import QuickEntryScreen
 from gf_mobile.ui.navigation import NavigationBar
 
 
@@ -63,12 +66,14 @@ class GestionFondosMApp(MDApp):
     def build(self):
         """Construir la aplicacion"""
         # Configurar tema
-        self.theme_cls.primary_palette = "Blue"
-        self.theme_cls.primary_hue = "500"
+        self.theme_cls.primary_palette = "Teal"
+        self.theme_cls.primary_hue = "600"
+        self.theme_cls.accent_palette = "Amber"
         self.theme_cls.theme_style = "Light"
 
         # Cargar tema guardado
         set_app_theme(self.config_obj.THEME)
+        self.apply_theme(self.config_obj.THEME, persist=False)
 
         # Crear screen manager
         self.sm = ScreenManager()
@@ -77,20 +82,26 @@ class GestionFondosMApp(MDApp):
         self.login_screen = LoginScreen(name='login')
         self.dashboard_screen = DashboardScreen(name='dashboard')
         self.transactions_screen = TransactionsScreen(name='transactions')
+        self.transactions_results_screen = TransactionsResultsScreen(name='transactions_results')
         self.add_transaction_screen = AddTransactionScreen(name='add_transaction')
         self.categories_screen = CategoriesScreen(name='categories')
         self.budgets_screen = BudgetsScreen(name='budgets')
         self.reports_screen = ReportsScreen(name='reports')
         self.sync_status_screen = SyncStatusScreen(name='sync_status')
+        self.profile_screen = ProfileScreen(name='profile')
+        self.quick_entry_screen = QuickEntryScreen(name='quick_entry')
 
         self.sm.add_widget(self.login_screen)
         self.sm.add_widget(self.dashboard_screen)
         self.sm.add_widget(self.transactions_screen)
+        self.sm.add_widget(self.transactions_results_screen)
         self.sm.add_widget(self.add_transaction_screen)
         self.sm.add_widget(self.categories_screen)
         self.sm.add_widget(self.budgets_screen)
         self.sm.add_widget(self.reports_screen)
         self.sm.add_widget(self.sync_status_screen)
+        self.sm.add_widget(self.profile_screen)
+        self.sm.add_widget(self.quick_entry_screen)
 
         # Iniciar en login
         self.sm.current = 'login'
@@ -106,6 +117,7 @@ class GestionFondosMApp(MDApp):
         self.engine = build_engine()
         self.session_factory = build_session_factory(self.engine)
         init_database()
+        self._load_ui_theme_preference()
 
         # Inicializar servicio de autenticacion (sin argumentos)
         self.auth_service = AuthService()
@@ -117,16 +129,20 @@ class GestionFondosMApp(MDApp):
         session_manager = SessionManager()
         self.session_manager = session_manager
         
-        if session_manager.has_valid_session():
-            # Si hay sesión válida, ir directamente a transacciones
+        if session_manager.has_valid_session() and self._can_resume_auth_session():
+            # Si hay sesion valida y autenticacion renovable, entrar directo.
             session_info = session_manager.get_session_info()
             print(f"[OK] Sesion valida encontrada para: {session_info['user_id']}")
             print(f"[OK] Dias restantes: {session_info['days_remaining']} dias")
-            self.sm.current = 'dashboard'
-            # Ejecutar login success para cargar datos
-            self.on_login_success(session_info['user_id'])
+            self.on_login_success(session_info['user_id'], just_logged_in=False)
+        elif session_manager.has_valid_session():
+            # Hay sesion local pero no token valido para sync.
+            print("[INFO] Sesion local encontrada pero sin autenticacion activa.")
+            print("[INFO] Debes iniciar sesion de nuevo para sincronizar.")
+            session_manager.logout()
+            self.sm.current = 'login'
         else:
-            # Si no hay sesión, mostrar login
+            # Si no hay sesion, mostrar login.
             print("[INFO] No hay sesion valida. Por favor, inicie sesion.")
             self.sm.current = 'login'
 
@@ -139,10 +155,31 @@ class GestionFondosMApp(MDApp):
         print("   - dashboard")
         print("   - transactions")
         print("   - add_transaction")
+        print("   - transactions_results")
         print("   - categories")
         print("   - budgets")
         print("   - reports")
         print("   - sync_status")
+        print("   - profile")
+        print("   - quick_entry")
+
+    def _can_resume_auth_session(self) -> bool:
+        """
+        Verifica si hay autenticacion reutilizable.
+        Intenta refrescar idToken en segundo plano usando refresh_token.
+        """
+        if not self.auth_service:
+            return False
+        if not self.auth_service.tokens:
+            return False
+        if not self.auth_service.tokens.refresh_token:
+            return False
+        try:
+            asyncio.run(self.auth_service.get_valid_id_token())
+            return True
+        except Exception as exc:
+            print(f"[INFO] No se pudo reanudar autenticacion: {exc}")
+            return False
 
     def _get_or_create_device_id(self, session) -> str:
         item = session.query(SyncState).filter(SyncState.key == "device_id").first()
@@ -154,7 +191,141 @@ class GestionFondosMApp(MDApp):
         session.commit()
         return device_id
 
-    def on_login_success(self, user_uid: str) -> None:
+    def _load_ui_theme_preference(self) -> None:
+        if not self.session_factory:
+            return
+        session = self.session_factory()
+        try:
+            item = session.query(SyncState).filter(SyncState.key == "ui_theme").first()
+            if item and item.value in {"light", "dark"}:
+                self.apply_theme(item.value, persist=False)
+        except Exception as exc:
+            print(f"[INFO] No se pudo cargar tema persistido: {exc}")
+        finally:
+            session.close()
+
+    def apply_theme(self, theme_name: str, persist: bool = True) -> None:
+        normalized = "dark" if str(theme_name).lower() == "dark" else "light"
+        set_app_theme(normalized)
+        self.config_obj.THEME = normalized
+        self.theme_cls.theme_style = "Dark" if normalized == "dark" else "Light"
+
+        if not persist or not self.session_factory:
+            return
+        session = self.session_factory()
+        try:
+            item = session.query(SyncState).filter(SyncState.key == "ui_theme").first()
+            if item:
+                item.value = normalized
+            else:
+                session.add(SyncState(key="ui_theme", value=normalized))
+            session.commit()
+        except Exception as exc:
+            print(f"[INFO] No se pudo guardar tema persistido: {exc}")
+        finally:
+            session.close()
+
+    def get_quick_button_values(self):
+        income_default = [5.0, 10.0, 15.0]
+        expense_default = [5.0, 10.0, 15.0]
+        if not self.session_factory:
+            return income_default, expense_default
+        session = self.session_factory()
+        try:
+            income_item = session.query(SyncState).filter(SyncState.key == "quick_income_values").first()
+            expense_item = session.query(SyncState).filter(SyncState.key == "quick_expense_values").first()
+            if income_item and income_item.value:
+                income = [float(x) for x in income_item.value.split(",") if x.strip()]
+            else:
+                income = income_default
+            if expense_item and expense_item.value:
+                expense = [float(x) for x in expense_item.value.split(",") if x.strip()]
+            else:
+                expense = expense_default
+            if len(income) != 3:
+                income = income_default
+            if len(expense) != 3:
+                expense = expense_default
+            return income, expense
+        except Exception:
+            return income_default, expense_default
+        finally:
+            session.close()
+
+    def is_quick_entry_enabled(self) -> bool:
+        if not self.session_factory:
+            return True
+        session = self.session_factory()
+        try:
+            item = session.query(SyncState).filter(SyncState.key == "quick_entry_enabled").first()
+            if not item or item.value is None:
+                return True
+            return str(item.value).strip().lower() in {"1", "true", "yes", "on"}
+        except Exception:
+            return True
+        finally:
+            session.close()
+
+    def set_quick_entry_enabled(self, enabled: bool) -> None:
+        if not self.session_factory:
+            return
+        session = self.session_factory()
+        try:
+            item = session.query(SyncState).filter(SyncState.key == "quick_entry_enabled").first()
+            value = "true" if enabled else "false"
+            if item:
+                item.value = value
+            else:
+                session.add(SyncState(key="quick_entry_enabled", value=value))
+            session.commit()
+        finally:
+            session.close()
+
+    def save_quick_button_values(self, income_values, expense_values) -> None:
+        if not self.session_factory:
+            return
+        income_text = ",".join(str(float(v)) for v in income_values)
+        expense_text = ",".join(str(float(v)) for v in expense_values)
+        session = self.session_factory()
+        try:
+            income_item = session.query(SyncState).filter(SyncState.key == "quick_income_values").first()
+            expense_item = session.query(SyncState).filter(SyncState.key == "quick_expense_values").first()
+            if income_item:
+                income_item.value = income_text
+            else:
+                session.add(SyncState(key="quick_income_values", value=income_text))
+            if expense_item:
+                expense_item.value = expense_text
+            else:
+                session.add(SyncState(key="quick_expense_values", value=expense_text))
+            session.commit()
+        finally:
+            session.close()
+
+    def logout_user(self) -> None:
+        try:
+            if self.auth_service:
+                self.auth_service.sign_out()
+        except Exception as exc:
+            print(f"[INFO] Error al cerrar sesion auth: {exc}")
+
+        try:
+            from gf_mobile.core.session_manager import SessionManager
+
+            SessionManager().logout()
+        except Exception as exc:
+            print(f"[INFO] Error al cerrar sesion local: {exc}")
+
+        if self.app_session is not None:
+            try:
+                self.app_session.close()
+            except Exception:
+                pass
+            self.app_session = None
+
+        self.sm.current = "login"
+
+    def on_login_success(self, user_uid: str, just_logged_in: bool = True) -> None:
         """Callback cuando el login es exitoso"""
         # Keep one long-lived session for UI services.
         if self.app_session is not None:
@@ -197,13 +368,16 @@ class GestionFondosMApp(MDApp):
             # Configurar servicios de transacciones
             tx_service = TransactionService(session, user_id=str(local_user.id))
             self.transactions_screen.transaction_service = tx_service
+            self.transactions_results_screen.transaction_service = tx_service
             self.add_transaction_screen.transaction_service = tx_service
             self.dashboard_screen.transaction_service = tx_service
             self.reports_screen.transaction_service = tx_service
+            self.quick_entry_screen.transaction_service = tx_service
             
             # Configurar servicios de categorías
             cat_service = CategoryService(session, user_id=str(local_user.id))
             self.categories_screen.category_service = cat_service
+            self.transactions_screen.category_service = cat_service
             self.dashboard_screen.category_service = cat_service
             self.reports_screen.category_service = cat_service
             
@@ -227,8 +401,12 @@ class GestionFondosMApp(MDApp):
             self.sync_status_screen.sync_service = sync_service
             self.sync_status_screen.session_factory = self.session_factory
             
-            # Cambiar a pantalla de dashboard
-            self.sm.current = "dashboard"
+            quick_enabled = self.is_quick_entry_enabled()
+            if not quick_enabled:
+                self.sm.current = "dashboard"
+            else:
+                # Si acaba de loguearse: dashboard. Si ya tenia sesion activa: quick entry.
+                self.sm.current = "dashboard" if just_logged_in else "quick_entry"
             
             # Ejecutar sincronización inicial (si es la primera vez) luego incremental
             self._run_initial_and_incremental_sync(user_uid, firestore_client, local_user.id)
@@ -269,10 +447,18 @@ class GestionFondosMApp(MDApp):
                         Clock.schedule_once(
                             lambda *_: self.sync_status_screen.update_last_sync_time()
                         )
-                    Clock.schedule_once(lambda *_: self.transactions_screen.refresh())
+                    Clock.schedule_once(lambda *_: self.transactions_results_screen.refresh())
                     Clock.schedule_once(lambda *_: self.dashboard_screen.refresh())
             except Exception as e:
                 print(f"Error en sincronizacion: {str(e)}")
+                error_message = f"Error en sincronizacion: {str(e)}"
+                Clock.schedule_once(
+                    lambda *_: setattr(
+                        self.sync_status_screen,
+                        "status_message",
+                        error_message,
+                    )
+                )
         
         threading.Thread(target=_worker, daemon=True).start()
 

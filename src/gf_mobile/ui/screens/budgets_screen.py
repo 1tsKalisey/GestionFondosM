@@ -1,20 +1,19 @@
-"""
-BudgetsScreen - Gestión de presupuestos
+﻿"""
+Budgets screen.
 """
 
 from datetime import datetime
+from typing import Optional
 
 from kivy.lang import Builder
 from kivy.properties import StringProperty
 from kivy.uix.screenmanager import Screen
 from kivy.uix.scrollview import ScrollView
-from kivymd.uix.boxlayout import MDBoxLayout
-from kivymd.uix.button import MDRaisedButton, MDFlatButton
-from kivymd.uix.textfield import MDTextField
-from kivymd.uix.spinner import MDSpinner
-from kivymd.uix.label import MDLabel
-from kivymd.uix.list import MDList, OneLineListItem
-from kivymd.uix.card import MDCard
+from kivymd.uix.button import MDFlatButton, MDRaisedButton
+from kivymd.uix.dialog import MDDialog
+from kivymd.uix.list import OneLineListItem
+
+from gf_mobile.ui.navigation import NavigationBar
 
 
 Builder.load_string(
@@ -24,109 +23,52 @@ Builder.load_string(
 
     MDBoxLayout:
         orientation: "vertical"
-        padding: "16dp"
-        spacing: "12dp"
+        padding: "12dp"
+        spacing: "8dp"
 
-        # Header
-        MDBoxLayout:
-            orientation: "horizontal"
+        MDLabel:
+            text: "Presupuestos"
+            font_style: "H6"
+            bold: True
             size_hint_y: None
-            height: "48dp"
+            height: "36dp"
 
-            MDLabel:
-                text: "Presupuestos"
-                font_style: "H6"
-                halign: "left"
-
-            MDRaisedButton:
-                text: "+ Nuevo"
-                size_hint_x: None
-                width: "100dp"
-                on_release: root.on_new_budget()
-
-        # Formulario de presupuesto
         MDCard:
             orientation: "vertical"
-            padding: "16dp"
-            spacing: "12dp"
-            size_hint_y: None
-            height: "280dp"
-            elevation: 2
+            padding: "12dp"
+            spacing: "8dp"
+            adaptive_height: True
 
-            MDLabel:
-                text: "Crear presupuesto"
-                font_style: "Body2"
-                bold: True
-                size_hint_y: None
-                height: "20dp"
-
-            MDLabel:
-                text: "Categoría"
-                font_style: "Caption"
-                theme_text_color: "Hint"
-                size_hint_y: None
-                height: "16dp"
-
-            MDSpinner:
+            MDTextField:
                 id: budget_category
-                text: "Seleccionar..."
-                values: ("Sin datos",)
-                size_hint_y: None
-                height: "48dp"
-
-            MDLabel:
-                text: "Límite (€)"
-                font_style: "Caption"
-                theme_text_color: "Hint"
-                size_hint_y: None
-                height: "16dp"
+                hint_text: "Categoria"
+                mode: "rectangle"
 
             MDTextField:
                 id: budget_limit
-                hint_text: "100.00"
+                hint_text: "Limite"
                 input_filter: "float"
                 mode: "rectangle"
-                size_hint_y: None
-                height: "48dp"
-
-            MDLabel:
-                text: "Mes (YYYY-MM)"
-                font_style: "Caption"
-                theme_text_color: "Hint"
-                size_hint_y: None
-                height: "16dp"
 
             MDTextField:
                 id: budget_month
-                hint_text: "2026-02"
+                hint_text: "Mes YYYY-MM"
                 mode: "rectangle"
                 text: root.default_month
-                size_hint_y: None
-                height: "48dp"
 
             MDBoxLayout:
-                spacing: "8dp"
                 size_hint_y: None
-                height: "48dp"
+                height: "42dp"
+                spacing: "8dp"
 
                 MDRaisedButton:
-                    text: "Crear"
+                    text: "Guardar"
                     on_release: root.on_save()
 
                 MDFlatButton:
                     text: "Limpiar"
                     on_release: root.on_clear()
 
-
-        # Presupuestos activos
-        MDLabel:
-            text: "Presupuestos activos"
-            font_style: "Body2"
-            bold: True
-            size_hint_y: None
-            height: "24dp"
-
-        # Lista de presupuestos
         ScrollView:
             MDList:
                 id: budgets_list
@@ -136,39 +78,20 @@ Builder.load_string(
             theme_text_color: "Hint"
             halign: "center"
             font_style: "Caption"
+            text_size: self.width, None
+            max_lines: 2
+            shorten: True
+            shorten_from: "right"
             size_hint_y: None
-            height: "24dp"
+            height: "30dp"
 
-        # Barra de navegación
-        MDBoxLayout:
-            orientation: "horizontal"
-            spacing: "4dp"
-            padding: "4dp"
-            size_hint_y: None
-            height: "52dp"
-
-            MDFlatButton:
-                text: "📊 Dashboard"
-                on_release: root.manager.current = 'dashboard'
-
-            MDFlatButton:
-                text: "💳 Transacciones"
-                on_release: root.manager.current = 'transactions'
-
-            MDFlatButton:
-                text: "🏷️ Categorías"
-                on_release: root.manager.current = 'categories'
-
-            MDFlatButton:
-                text: "📈 Reportes"
-                on_release: root.manager.current = 'reports'
+        NavigationBar:
+            id: nav_bar
     """
 )
 
 
 class BudgetsScreen(Screen):
-    """Pantalla de gestión de presupuestos."""
-
     status_message = StringProperty("")
     default_month = StringProperty("")
 
@@ -177,138 +100,138 @@ class BudgetsScreen(Screen):
         self.budget_service = None
         self.category_service = None
         self.selected_budget_id = None
-        # Establecer mes por defecto
-        today = datetime.now()
-        self.default_month = today.strftime("%Y-%m")
+        self.default_month = datetime.now().strftime("%Y-%m")
+        self._dialog: Optional[MDDialog] = None
 
     def on_enter(self):
-        """Se llama cuando la pantalla se muestra"""
+        if "nav_bar" in self.ids:
+            self.ids.nav_bar.screen_manager = self.manager
+            self.ids.nav_bar.current_screen = "budgets"
         self.refresh()
 
     def refresh(self) -> None:
-        """Recarga la lista de presupuestos"""
         try:
             self.ids.budgets_list.clear_widgets()
-
             if not self.budget_service:
                 self.status_message = "BudgetService no configurado"
                 return
 
-            # Obtener presupuestos del mes actual
-            today = datetime.now()
-            current_month = today.strftime("%Y-%m")
-
+            current_month = datetime.now().strftime("%Y-%m")
             budgets = self.budget_service.list_all()
-            # Filtrar por mes actual
             month_budgets = [b for b in budgets if str(b.month).startswith(current_month)]
 
             for budget in month_budgets:
-                category_name = "N/A"
-                if hasattr(budget, 'category') and budget.category:
-                    category_name = budget.category.name
-
-                item = OneLineListItem(
-                    text=f"{category_name}: € {budget.limit:.2f}",
-                    on_release=lambda x=budget: self.on_select_budget(x)
+                category_name = budget.category.name if hasattr(budget, "category") and budget.category else "N/A"
+                self.ids.budgets_list.add_widget(
+                    OneLineListItem(
+                        text=f"{category_name}: EUR {budget.amount:.2f}",
+                        on_release=lambda _x, b=budget: self.on_select_budget(b),
+                    )
                 )
-                self.ids.budgets_list.add_widget(item)
-
-            # Cargar opciones de categorías
-            if self.category_service:
-                categories = self.category_service.list_all()
-                category_names = [cat.name for cat in categories]
-                self.ids.budget_category.values = category_names
 
             self.status_message = f"{len(month_budgets)} presupuestos"
-
         except Exception as exc:
-            self.status_message = f"Error: {str(exc)}"
+            self.status_message = self._short_error(exc)
 
     def on_new_budget(self) -> None:
-        """Abre el formulario para nuevo presupuesto"""
-        self.ids.budget_category.text = "Seleccionar..."
+        self.ids.budget_category.text = ""
         self.ids.budget_limit.text = ""
         self.ids.budget_month.text = self.default_month
         self.selected_budget_id = None
 
     def on_select_budget(self, budget) -> None:
-        """Selecciona un presupuesto para editar"""
-        category_name = "N/A"
-        if hasattr(budget, 'category') and budget.category:
-            category_name = budget.category.name
-
+        category_name = budget.category.name if hasattr(budget, "category") and budget.category else ""
         self.ids.budget_category.text = category_name
-        self.ids.budget_limit.text = str(budget.limit)
+        self.ids.budget_limit.text = str(budget.amount)
         self.ids.budget_month.text = str(budget.month)
         self.selected_budget_id = budget.id
 
     def on_save(self) -> None:
-        """Guarda el presupuesto"""
         try:
             if not self.budget_service or not self.category_service:
                 self.status_message = "Servicios no configurados"
+                self._show_dialog("Error", self.status_message, is_error=True)
                 return
 
-            category_name = self.ids.budget_category.text
+            category_name = self.ids.budget_category.text.strip()
             limit_text = self.ids.budget_limit.text.strip()
             month = self.ids.budget_month.text.strip()
 
             if not limit_text:
-                self.status_message = "Ingrese el límite"
+                self.status_message = "Ingrese el limite"
+                self._show_dialog("Error", self.status_message, is_error=True)
                 return
-
-            if category_name == "Seleccionar...":
-                self.status_message = "Seleccione una categoría"
+            if not category_name:
+                self.status_message = "Ingrese categoria"
+                self._show_dialog("Error", self.status_message, is_error=True)
                 return
-
             if not month:
-                self.status_message = "Ingrese el mes (YYYY-MM)"
+                self.status_message = "Ingrese el mes"
+                self._show_dialog("Error", self.status_message, is_error=True)
                 return
 
-            # Obtener ID de categoría
             categories = self.category_service.list_all()
             category = next((c for c in categories if c.name == category_name), None)
-
             if not category:
-                self.status_message = "Categoría no encontrada"
+                self.status_message = "Categoria no encontrada"
+                self._show_dialog("Error", self.status_message, is_error=True)
                 return
 
-            limit = float(limit_text)
-
+            amount = float(limit_text)
             if self.selected_budget_id:
-                # Editar existente
                 from gf_mobile.persistence.models import Budget
+
                 session = self.budget_service.session
-                budget = session.query(Budget).filter(
-                    Budget.id == self.selected_budget_id
-                ).first()
+                budget = session.query(Budget).filter(Budget.id == self.selected_budget_id).first()
                 if budget:
                     budget.category_id = category.id
-                    budget.limit = limit
+                    budget.amount = amount
                     budget.month = month
                     session.commit()
                     self.status_message = "Presupuesto actualizado"
+                    self._show_dialog("Exito", self.status_message, is_error=False)
             else:
-                # Crear nuevo
                 from gf_mobile.services.budget_service import BudgetInput
-                self.budget_service.create(BudgetInput(
-                    category_id=category.id,
-                    limit=limit,
-                    month=month,
-                ))
+
+                self.budget_service.create(BudgetInput(category_id=category.id, limit=amount, month=month))
                 self.status_message = "Presupuesto creado"
+                self._show_dialog("Exito", self.status_message, is_error=False)
 
             self.on_clear()
             self.refresh()
-
         except ValueError:
-            self.status_message = "Ingrese un límite válido"
+            self.status_message = "Ingrese un limite valido"
+            self._show_dialog("Error", self.status_message, is_error=True)
         except Exception as exc:
-            self.status_message = f"Error: {str(exc)}"
+            self.status_message = self._short_error(exc)
+            self._show_dialog("Error", self.status_message, is_error=True)
+
+    @staticmethod
+    def _short_error(exc: Exception) -> str:
+        message = str(exc).replace("\n", " ").strip()
+        if len(message) > 120:
+            message = f"{message[:117]}..."
+        return f"Error: {message}"
 
     def on_clear(self) -> None:
-        """Limpia el formulario"""
-        self.ids.budget_category.text = "Seleccionar..."
+        self.ids.budget_category.text = ""
         self.ids.budget_limit.text = ""
         self.ids.budget_month.text = self.default_month
         self.selected_budget_id = None
+
+    def _show_dialog(self, title: str, message: str, is_error: bool) -> None:
+        if self._dialog:
+            self._dialog.dismiss()
+        button_color = (0.84, 0.25, 0.22, 1) if is_error else (0.09, 0.52, 0.66, 1)
+        self._dialog = MDDialog(
+            title=title,
+            text=message,
+            buttons=[
+                MDRaisedButton(
+                    text="Aceptar",
+                    md_bg_color=button_color,
+                    on_release=lambda *_: self._dialog.dismiss(),
+                )
+            ],
+        )
+        self._dialog.open()
