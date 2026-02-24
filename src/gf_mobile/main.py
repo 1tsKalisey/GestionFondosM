@@ -120,14 +120,14 @@ class GestionFondosMApp(MDApp):
         if session_manager.has_valid_session():
             # Si hay sesión válida, ir directamente a transacciones
             session_info = session_manager.get_session_info()
-            print(f"✓ Sesión válida encontrada para: {session_info['user_id']}")
-            print(f"✓ Días restantes: {session_info['days_remaining']} días")
+            print(f"[OK] Sesion valida encontrada para: {session_info['user_id']}")
+            print(f"[OK] Dias restantes: {session_info['days_remaining']} dias")
             self.sm.current = 'dashboard'
             # Ejecutar login success para cargar datos
             self.on_login_success(session_info['user_id'])
         else:
             # Si no hay sesión, mostrar login
-            print("ℹ No hay sesión válida. Por favor, inicie sesión.")
+            print("[INFO] No hay sesion valida. Por favor, inicie sesion.")
             self.sm.current = 'login'
 
         print("GestionFondosM iniciada correctamente")
@@ -254,10 +254,10 @@ class GestionFondosMApp(MDApp):
                 
                 # Verificar si necesita sincronización inicial
                 if initial_sync_service.needs_initial_sync():
-                    print("Iniciando sincronización inicial...")
+                    print("Iniciando sincronizacion inicial...")
                     # Ejecutar sincronización inicial de forma sincrónica (es la primera vez)
                     asyncio.run(initial_sync_service.perform_initial_sync())
-                    print("✓ Sincronización inicial completada")
+                    print("[OK] Sincronizacion inicial completada")
                 
                 # Luego ejecutar sincronización incremental normal
                 if self.sync_status_screen.sync_service:
@@ -272,7 +272,7 @@ class GestionFondosMApp(MDApp):
                     Clock.schedule_once(lambda *_: self.transactions_screen.refresh())
                     Clock.schedule_once(lambda *_: self.dashboard_screen.refresh())
             except Exception as e:
-                print(f"Error en sincronización: {str(e)}")
+                print(f"Error en sincronizacion: {str(e)}")
         
         threading.Thread(target=_worker, daemon=True).start()
 

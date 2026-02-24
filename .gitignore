@@ -61,6 +61,8 @@ libs/
 # Environment
 .env
 .env.local
+app.env
+src/app.env
 venv/
 env/
 

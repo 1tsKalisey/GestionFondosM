@@ -139,7 +139,7 @@ class AuthService:
     def _ensure_firebase_auth_config(self) -> None:
         if not (self.settings.FIREBASE_API_KEY or "").strip():
             raise AuthError(
-                "FIREBASE_API_KEY no configurada. En Android, empaqueta src/.env "
+                "FIREBASE_API_KEY no configurada. En Android, empaqueta src/app.env "
                 "o define la variable en el entorno de build."
             )
 

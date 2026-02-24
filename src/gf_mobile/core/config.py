@@ -89,7 +89,7 @@ def _as_int(value: Any, default: int) -> int:
 
 
 def _load_raw_config() -> dict[str, Any]:
-    # Try several locations so Android builds can ship config as src/.env.
+    # Try several locations so Android builds can ship config as src/app.env.
     candidates: list[Path] = []
     custom_env_path = os.environ.get("GF_ENV_FILE")
     if custom_env_path:
@@ -98,8 +98,12 @@ def _load_raw_config() -> dict[str, Any]:
     cwd = Path.cwd()
     candidates.extend(
         [
+            cwd / "app.env",
+            cwd.parent / "app.env",
             cwd / ".env",
             cwd.parent / ".env",
+            Path(__file__).resolve().parents[2] / "app.env",  # src/app.env
+            Path(__file__).resolve().parents[3] / "app.env",  # repo/app.env (dev)
             Path(__file__).resolve().parents[2] / ".env",  # src/.env
             Path(__file__).resolve().parents[3] / ".env",  # repo/.env (dev)
         ]
