@@ -158,10 +158,33 @@ class QuickEntryScreen(Screen):
                 note="Acceso rapido",
                 occurred_at=datetime.utcnow(),
             )
+            self._trigger_background_sync()
             sign = "+" if tx_type == "ingreso" else "-"
             self._show_dialog("Exito", f"Movimiento registrado: {sign}{amount}", is_error=False)
         except Exception as exc:
             self._show_dialog("Error", f"{exc}", is_error=True)
+
+    def _trigger_background_sync(self) -> None:
+        app = App.get_running_app()
+        sync_screen = getattr(app, "sync_status_screen", None) if app else None
+        sync_service = getattr(sync_screen, "sync_service", None) if sync_screen else None
+        if not sync_service:
+            return
+
+        import asyncio
+        import threading
+
+        def _worker():
+            try:
+                result = asyncio.run(sync_service.sync_now(push_limit=100, pull_limit=50))
+                print(
+                    f"[SYNC][QUICK] success={result.success} "
+                    f"pushed={result.pushed} pulled={result.pulled} error={result.error}"
+                )
+            except Exception as exc:
+                print(f"[SYNC][QUICK] background sync error: {exc}")
+
+        threading.Thread(target=_worker, daemon=True).start()
 
     def _show_dialog(self, title: str, message: str, is_error: bool) -> None:
         if self._dialog:

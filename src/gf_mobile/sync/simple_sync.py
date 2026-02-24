@@ -64,11 +64,13 @@ class SimpleSyncService:
         error = None
 
         try:
+            print(f"[SYNC][M] sync_now start push_limit={push_limit} pull_limit={pull_limit}")
             # Push: Enviar cambios locales
             pushed = await self.sync_protocol.push_outbox(limit=push_limit)
             
             # Pull: Recibir y aplicar cambios remotos
             pulled = await self.sync_protocol.pull_and_apply(page_size=pull_limit)
+            print(f"[SYNC][M] sync_now done success=True pushed={pushed} pulled={pulled}")
             
             return SyncResult(
                 pushed=pushed,
@@ -78,6 +80,7 @@ class SimpleSyncService:
 
         except SyncError as e:
             error = str(e)
+            print(f"[SYNC][M] sync_now done success=False pushed={pushed} pulled={pulled} error={error}")
             return SyncResult(
                 pushed=pushed,
                 pulled=pulled,
@@ -86,6 +89,7 @@ class SimpleSyncService:
             )
         except Exception as e:
             error = f"Error inesperado: {str(e)}"
+            print(f"[SYNC][M] sync_now done success=False pushed={pushed} pulled={pulled} error={error}")
             return SyncResult(
                 pushed=pushed,
                 pulled=pulled,

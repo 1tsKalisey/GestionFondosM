@@ -61,10 +61,18 @@ class SyncProtocol:
                 .limit(limit)
                 .all()
             )
+            print(
+                f"[SYNC][M][PUSH] start user_uid={self.user_uid} device_id={self.device_id} "
+                f"pending={len(outbox_items)} limit={limit}"
+            )
 
             for item in outbox_items:
                 payload = json.loads(item.payload)
                 try:
+                    print(
+                        f"[SYNC][M][PUSH] send event_id={item.id} "
+                        f"type={item.event_type or 'txn_updated'} entity_id={item.entity_id}"
+                    )
                     await self.firestore_client.create_event(
                         user_uid=self.user_uid,
                         device_id=self.device_id,
@@ -77,12 +85,17 @@ class SyncProtocol:
                     item.sync_error = None
                     item.last_error = None
                     pushed += 1
+                    print(f"[SYNC][M][PUSH] ok event_id={item.id}")
                 except Exception as e:
                     item.sync_error = str(e)
                     item.last_error = str(e)
                     item.retry_count = (item.retry_count or 0) + 1
                     delay = min(3600, 2 ** min(item.retry_count, 10))
                     item.next_attempt_at = datetime.utcnow() + timedelta(seconds=delay)
+                    print(
+                        f"[SYNC][M][PUSH] fail event_id={item.id} retry={item.retry_count} "
+                        f"next_attempt_at={item.next_attempt_at} error={e}"
+                    )
 
             self._set_state(
                 session,
@@ -91,6 +104,7 @@ class SyncProtocol:
             )
 
             session.commit()
+            print(f"[SYNC][M][PUSH] done pushed={pushed}")
             return pushed
         except Exception as e:
             session.rollback()

@@ -5,6 +5,7 @@ Add transaction screen.
 from datetime import datetime
 from typing import Dict, Optional
 
+from kivy.app import App
 from kivy.lang import Builder
 from kivy.properties import StringProperty
 from kivy.uix.screenmanager import Screen
@@ -231,12 +232,35 @@ class AddTransactionScreen(Screen):
                 note=note,
                 occurred_at=datetime.utcnow(),
             )
+            self._trigger_background_sync()
             self.ids.amount.text = ""
             self.ids.note.text = ""
             self._show_popup("Exito", "Transaccion guardada correctamente")
         except Exception as exc:
             self.status_message = f"Error: {exc}"
             self._show_popup("Error", self.status_message)
+
+    def _trigger_background_sync(self) -> None:
+        app = App.get_running_app()
+        sync_screen = getattr(app, "sync_status_screen", None) if app else None
+        sync_service = getattr(sync_screen, "sync_service", None) if sync_screen else None
+        if not sync_service:
+            return
+
+        import asyncio
+        import threading
+
+        def _worker():
+            try:
+                result = asyncio.run(sync_service.sync_now(push_limit=100, pull_limit=50))
+                print(
+                    f"[SYNC][ADD] success={result.success} "
+                    f"pushed={result.pushed} pulled={result.pulled} error={result.error}"
+                )
+            except Exception as exc:
+                print(f"[SYNC][ADD] background sync error: {exc}")
+
+        threading.Thread(target=_worker, daemon=True).start()
 
     def _show_popup(self, title: str, message: str) -> None:
         if self._dialog:

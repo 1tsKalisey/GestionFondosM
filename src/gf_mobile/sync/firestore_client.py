@@ -110,7 +110,12 @@ class FirestoreClient:
             f"{self.settings.FIRESTORE_API_URL}/projects/{self.settings.FIREBASE_PROJECT_ID}"
             "/databases/(default)/documents:commit"
         )
+        print(
+            f"[SYNC][M][FS] create_event user_uid={user_uid} event_id={event_id} "
+            f"type={event_type} entity_id={entity_id}"
+        )
         await self._request("POST", url, json_body=body)
+        print(f"[SYNC][M][FS] create_event ok event_id={event_id}")
         return event_id
 
     async def fetch_events_since(
