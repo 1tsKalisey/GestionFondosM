@@ -212,7 +212,7 @@ class SyncScheduler:
     def _get_or_create_device_id(self) -> str:
         session = self.session_factory()
         try:
-            item = session.get(SyncState, "device_id")
+            item = session.query(SyncState).filter(SyncState.key == "device_id").first()
             if item and item.value:
                 return item.value
             import uuid

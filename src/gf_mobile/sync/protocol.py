@@ -145,7 +145,11 @@ class SyncProtocol:
                 event_id = event.get("id")
                 if not event_id:
                     continue
-                if session.get(AppliedEvent, event_id):
+                if (
+                    session.query(AppliedEvent)
+                    .filter(AppliedEvent.event_id == event_id)
+                    .first()
+                ):
                     continue
                 if event.get("originDeviceId") == self.device_id:
                     session.add(AppliedEvent(event_id=event_id))

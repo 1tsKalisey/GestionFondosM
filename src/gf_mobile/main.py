@@ -145,7 +145,7 @@ class GestionFondosMApp(MDApp):
         print("   - sync_status")
 
     def _get_or_create_device_id(self, session) -> str:
-        item = session.get(SyncState, "device_id")
+        item = session.query(SyncState).filter(SyncState.key == "device_id").first()
         if item and item.value:
             return item.value
         import uuid
