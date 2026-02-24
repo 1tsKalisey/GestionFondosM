@@ -8,6 +8,7 @@ on:
 jobs:
   build-apk:
     runs-on: ubuntu-22.04  # Usar versión específica para consistencia
+    environment: main
 
     steps:
       - name: Checkout
@@ -100,6 +101,10 @@ jobs:
 
       - name: Create mobile .env for Android build
         run: |
+          if [ -z "${{ secrets.FIREBASE_API_KEY }}" ]; then
+            echo "Falta FIREBASE_API_KEY en Secrets"
+            exit 1
+          fi
           {
             echo "FIREBASE_API_KEY=${{ secrets.FIREBASE_API_KEY }}"
             echo "FIREBASE_PROJECT_ID=${{ secrets.FIREBASE_PROJECT_ID }}"
