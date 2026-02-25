@@ -41,11 +41,34 @@ class ThemeColors:
             "warning": self.warning,
             "error": self.error,
         }
+
+    def to_rgba_dict(self) -> Dict[str, Tuple[float, float, float, float]]:
+        return {
+            "primary": hex_to_rgba(self.primary),
+            "accent": hex_to_rgba(self.accent),
+            "background": hex_to_rgba(self.background),
+            "surface": hex_to_rgba(self.surface),
+            "text_primary": hex_to_rgba(self.text_primary),
+            "text_secondary": hex_to_rgba(self.text_secondary),
+            "success": hex_to_rgba(self.success),
+            "warning": hex_to_rgba(self.warning),
+            "error": hex_to_rgba(self.error),
+        }
     
     @classmethod
     def from_dict(cls, data: Dict[str, str]) -> "ThemeColors":
         """Crear desde diccionario"""
         return cls(**data)
+
+
+def hex_to_rgba(hex_color: str, alpha: float = 1.0) -> Tuple[float, float, float, float]:
+    value = hex_color.strip().lstrip("#")
+    if len(value) != 6:
+        raise ValueError(f"Color hex invalido: {hex_color}")
+    r = int(value[0:2], 16) / 255.0
+    g = int(value[2:4], 16) / 255.0
+    b = int(value[4:6], 16) / 255.0
+    return (r, g, b, alpha)
 
 
 class ThemeManager:
@@ -56,27 +79,27 @@ class ThemeManager:
     
     # Definiciones de temas
     LIGHT_THEME = ThemeColors(
-        primary="#2196F3",          # Material Blue
-        accent="#FF5722",           # Material Deep Orange
-        background="#FFFFFF",       # White
-        surface="#F5F5F5",          # Light Gray
-        text_primary="#212121",     # Dark Gray
-        text_secondary="#757575",   # Medium Gray
-        success="#4CAF50",          # Material Green
-        warning="#FFC107",          # Material Amber
-        error="#F44336",            # Material Red
+        primary="#0F766E",          # Teal 700
+        accent="#F97316",           # Orange 500
+        background="#F8FAFC",       # Slate 50
+        surface="#FFFFFF",          # White
+        text_primary="#0F172A",     # Slate 900
+        text_secondary="#64748B",   # Slate 500
+        success="#16A34A",          # Green 600
+        warning="#D97706",          # Amber 600
+        error="#DC2626",            # Red 600
     )
     
     DARK_THEME = ThemeColors(
-        primary="#1976D2",          # Darker Blue
-        accent="#FF7043",           # Lighter Orange
-        background="#121212",       # Dark background
-        surface="#1E1E1E",          # Slightly lighter dark
-        text_primary="#FFFFFF",     # White
-        text_secondary="#BDBDBD",   # Light Gray
-        success="#66BB6A",          # Light Green
-        warning="#FFA726",          # Light Orange
-        error="#EF5350",            # Light Red
+        primary="#0D9488",          # Teal 600
+        accent="#FB923C",           # Orange 400
+        background="#0B1120",       # Slate 950
+        surface="#111827",          # Slate 900
+        text_primary="#F8FAFC",     # Slate 50
+        text_secondary="#94A3B8",   # Slate 400
+        success="#22C55E",          # Green 500
+        warning="#F59E0B",          # Amber 500
+        error="#EF4444",            # Red 500
     )
     
     # Temas disponibles
@@ -116,6 +139,14 @@ class ThemeManager:
         self._current_theme = ThemeName(theme_name)
         self._theme_colors = self.THEMES[theme_name]
         return True
+
+    def apply_overrides(self, overrides: Dict[str, str]) -> None:
+        base = self.THEMES[self._current_theme.value]
+        data = base.to_dict()
+        for key, value in (overrides or {}).items():
+            if key in data and value:
+                data[key] = value
+        self._theme_colors = ThemeColors.from_dict(data)
     
     def toggle_dark_mode(self) -> bool:
         """
@@ -197,3 +228,8 @@ def set_app_theme(theme_name: str) -> bool:
 def is_dark_mode() -> bool:
     """Helper rápido para verificar modo oscuro"""
     return _theme_manager.is_dark_mode()
+
+
+def get_kivy_palette() -> Dict[str, Tuple[float, float, float, float]]:
+    """Helper rápido para obtener colores actuales en RGBA para Kivy."""
+    return _theme_manager.colors.to_rgba_dict()

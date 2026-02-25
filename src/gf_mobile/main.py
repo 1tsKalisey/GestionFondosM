@@ -13,11 +13,13 @@ logger = logging.getLogger("gf_mobile")
 logger.info("[GF_DEBUG] gf_mobile.main imported")
 
 from kivy.uix.screenmanager import ScreenManager
+from kivy.properties import DictProperty
 from kivymd.app import MDApp
 
 from gf_mobile.core.config import get_settings
 from gf_mobile.persistence.db import init_database, build_engine, build_session_factory
-from gf_mobile.ui.theme import get_theme_manager, set_app_theme
+import json
+from gf_mobile.ui.theme import get_kivy_palette, get_theme_manager, set_app_theme
 from gf_mobile.ui.responsive import ResponsiveManager
 from gf_mobile.core.auth import AuthService
 from gf_mobile.sync.firestore_client import FirestoreClient
@@ -52,6 +54,7 @@ from gf_mobile.ui.navigation import NavigationBar
 
 class GestionFondosMApp(MDApp):
     """Aplicacion principal de GestionFondosM"""
+    kivy_palette = DictProperty({})
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
@@ -74,6 +77,15 @@ class GestionFondosMApp(MDApp):
         # Cargar tema guardado
         set_app_theme(self.config_obj.THEME)
         self.apply_theme(self.config_obj.THEME, persist=False)
+
+        # Inicializar base de datos y cargar paleta antes de crear pantallas
+        self.config_obj.ensure_db_dir()
+        self.engine = build_engine()
+        self.session_factory = build_session_factory(self.engine)
+        init_database()
+        self._load_ui_theme_preference()
+        self._apply_custom_palette_for_theme(self.config_obj.THEME)
+        self.kivy_palette = get_kivy_palette()
 
         # Crear screen manager
         self.sm = ScreenManager()
@@ -110,14 +122,7 @@ class GestionFondosMApp(MDApp):
 
     def on_start(self):
         """Inicializacion al arrancar la app"""
-        # Asegurar que existe el directorio de BD
-        self.config_obj.ensure_db_dir()
-
-        # Inicializar base de datos
-        self.engine = build_engine()
-        self.session_factory = build_session_factory(self.engine)
-        init_database()
-        self._load_ui_theme_preference()
+        # Base de datos y paleta ya inicializadas en build()
 
         # Inicializar servicio de autenticacion (sin argumentos)
         self.auth_service = AuthService()
@@ -204,11 +209,85 @@ class GestionFondosMApp(MDApp):
         finally:
             session.close()
 
+    def _custom_palette_key(self, theme_name: str) -> str:
+        normalized = "dark" if str(theme_name).lower() == "dark" else "light"
+        return f"custom_palette_{normalized}"
+
+    def _load_custom_palette(self, theme_name: str):
+        if not self.session_factory:
+            return {}
+        session = self.session_factory()
+        try:
+            key = self._custom_palette_key(theme_name)
+            item = session.query(SyncState).filter(SyncState.key == key).first()
+            if item and item.value:
+                return json.loads(item.value)
+            return {}
+        except Exception:
+            return {}
+        finally:
+            session.close()
+
+    def _save_custom_palette(self, theme_name: str, overrides: dict) -> None:
+        if not self.session_factory:
+            return
+        session = self.session_factory()
+        try:
+            key = self._custom_palette_key(theme_name)
+            item = session.query(SyncState).filter(SyncState.key == key).first()
+            payload = json.dumps(overrides or {})
+            if item:
+                item.value = payload
+            else:
+                session.add(SyncState(key=key, value=payload))
+            session.commit()
+        finally:
+            session.close()
+
+    def _clear_custom_palette(self, theme_name: str) -> None:
+        if not self.session_factory:
+            return
+        session = self.session_factory()
+        try:
+            key = self._custom_palette_key(theme_name)
+            item = session.query(SyncState).filter(SyncState.key == key).first()
+            if item:
+                item.value = ""
+                session.commit()
+        finally:
+            session.close()
+
+    def _apply_custom_palette_for_theme(self, theme_name: str) -> None:
+        overrides = self._load_custom_palette(theme_name)
+        self.theme_manager.apply_overrides(overrides)
+        self.kivy_palette = get_kivy_palette()
+        self._refresh_palette_on_screens()
+
+    def get_custom_palette_for_current_theme(self) -> dict:
+        return self._load_custom_palette(self.config_obj.THEME)
+
+    def save_custom_palette_for_current_theme(self, overrides: dict) -> None:
+        self._save_custom_palette(self.config_obj.THEME, overrides)
+        self._apply_custom_palette_for_theme(self.config_obj.THEME)
+
+    def apply_custom_palette_overrides(self, overrides: dict) -> None:
+        self.theme_manager.apply_overrides(overrides)
+        self.kivy_palette = get_kivy_palette()
+        self._refresh_palette_on_screens()
+
+    def reset_custom_palette_for_current_theme(self) -> None:
+        self._clear_custom_palette(self.config_obj.THEME)
+        self.theme_manager.set_theme(self.config_obj.THEME)
+        self.kivy_palette = get_kivy_palette()
+
     def apply_theme(self, theme_name: str, persist: bool = True) -> None:
         normalized = "dark" if str(theme_name).lower() == "dark" else "light"
         set_app_theme(normalized)
         self.config_obj.THEME = normalized
         self.theme_cls.theme_style = "Dark" if normalized == "dark" else "Light"
+        self.kivy_palette = get_kivy_palette()
+        self._apply_custom_palette_for_theme(normalized)
+        self._refresh_palette_on_screens()
 
         if not persist or not self.session_factory:
             return
@@ -225,30 +304,28 @@ class GestionFondosMApp(MDApp):
         finally:
             session.close()
 
-    def get_quick_button_values(self):
-        income_default = [5.0, 10.0, 15.0]
-        expense_default = [5.0, 10.0, 15.0]
+    def _refresh_palette_on_screens(self) -> None:
+        if not hasattr(self, "sm"):
+            return
+        for screen in getattr(self.sm, "screens", []):
+            if hasattr(screen, "_apply_theme_colors"):
+                try:
+                    screen._apply_theme_colors()
+                except Exception:
+                    pass
+
+    def get_quick_step_value(self) -> float:
+        default_value = 5.0
         if not self.session_factory:
-            return income_default, expense_default
+            return default_value
         session = self.session_factory()
         try:
-            income_item = session.query(SyncState).filter(SyncState.key == "quick_income_values").first()
-            expense_item = session.query(SyncState).filter(SyncState.key == "quick_expense_values").first()
-            if income_item and income_item.value:
-                income = [float(x) for x in income_item.value.split(",") if x.strip()]
-            else:
-                income = income_default
-            if expense_item and expense_item.value:
-                expense = [float(x) for x in expense_item.value.split(",") if x.strip()]
-            else:
-                expense = expense_default
-            if len(income) != 3:
-                income = income_default
-            if len(expense) != 3:
-                expense = expense_default
-            return income, expense
+            item = session.query(SyncState).filter(SyncState.key == "quick_step_value").first()
+            if item and item.value is not None:
+                return float(item.value)
+            return default_value
         except Exception:
-            return income_default, expense_default
+            return default_value
         finally:
             session.close()
 
@@ -281,23 +358,17 @@ class GestionFondosMApp(MDApp):
         finally:
             session.close()
 
-    def save_quick_button_values(self, income_values, expense_values) -> None:
+    def save_quick_step_value(self, step_value: float) -> None:
         if not self.session_factory:
             return
-        income_text = ",".join(str(float(v)) for v in income_values)
-        expense_text = ",".join(str(float(v)) for v in expense_values)
         session = self.session_factory()
         try:
-            income_item = session.query(SyncState).filter(SyncState.key == "quick_income_values").first()
-            expense_item = session.query(SyncState).filter(SyncState.key == "quick_expense_values").first()
-            if income_item:
-                income_item.value = income_text
+            item = session.query(SyncState).filter(SyncState.key == "quick_step_value").first()
+            value = str(float(step_value))
+            if item:
+                item.value = value
             else:
-                session.add(SyncState(key="quick_income_values", value=income_text))
-            if expense_item:
-                expense_item.value = expense_text
-            else:
-                session.add(SyncState(key="quick_expense_values", value=expense_text))
+                session.add(SyncState(key="quick_step_value", value=value))
             session.commit()
         finally:
             session.close()

@@ -42,13 +42,15 @@ Builder.load_string(
 
             MDRaisedButton:
                 text: "Sincronizar ahora"
+                md_bg_color: app.kivy_palette["primary"]
                 on_release: root.on_sync_now()
                 disabled: root.is_syncing
 
         MDLabel:
             text: root.status_message
             halign: "center"
-            theme_text_color: "Error" if root.has_error else "Hint"
+            theme_text_color: "Custom"
+            text_color: app.kivy_palette["error"] if root.has_error else app.kivy_palette["text_secondary"]
             text_size: self.width, None
             max_lines: 3
             shorten: True

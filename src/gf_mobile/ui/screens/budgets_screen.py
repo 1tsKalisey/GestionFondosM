@@ -63,6 +63,7 @@ Builder.load_string(
 
                 MDRaisedButton:
                     text: "Guardar"
+                    md_bg_color: app.kivy_palette["primary"]
                     on_release: root.on_save()
 
                 MDFlatButton:
@@ -222,7 +223,17 @@ class BudgetsScreen(Screen):
     def _show_dialog(self, title: str, message: str, is_error: bool) -> None:
         if self._dialog:
             self._dialog.dismiss()
-        button_color = (0.84, 0.25, 0.22, 1) if is_error else (0.09, 0.52, 0.66, 1)
+        from kivy.app import App
+
+        app = App.get_running_app()
+        palette = getattr(app, "kivy_palette", None) if app else None
+        if palette:
+            button_color = palette["error"] if is_error else palette["primary"]
+        else:
+            from gf_mobile.ui.theme import get_kivy_palette
+
+            fallback = get_kivy_palette()
+            button_color = fallback["error"] if is_error else fallback["primary"]
         self._dialog = MDDialog(
             title=title,
             text=message,

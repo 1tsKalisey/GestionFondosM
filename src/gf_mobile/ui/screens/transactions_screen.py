@@ -165,12 +165,12 @@ class TransactionsScreen(Screen):
     type_display = StringProperty("Todos")
     categories_button_text = StringProperty("Categorias: todas")
     categories_expanded = BooleanProperty(False)
-    accent_color = ListProperty([0.09, 0.52, 0.66, 1])
-    card_bg_color = ListProperty([0.97, 0.99, 1, 1])
-    chip_active_bg = ListProperty([0.09, 0.52, 0.66, 1])
+    accent_color = ListProperty([0, 0, 0, 0])
+    card_bg_color = ListProperty([0, 0, 0, 0])
+    chip_active_bg = ListProperty([0, 0, 0, 0])
     chip_active_text = ListProperty([1, 1, 1, 1])
-    chip_inactive_bg = ListProperty([0.88, 0.93, 0.97, 1])
-    chip_inactive_text = ListProperty([0.2, 0.3, 0.38, 1])
+    chip_inactive_bg = ListProperty([0, 0, 0, 0])
+    chip_inactive_text = ListProperty([0, 0, 0, 1])
 
     def __init__(self, transaction_service=None, category_service=None, **kwargs):
         super().__init__(**kwargs)
@@ -301,20 +301,24 @@ class TransactionsScreen(Screen):
 
     def _apply_theme_colors(self) -> None:
         app = App.get_running_app()
-        is_dark = bool(app and getattr(app.theme_cls, "theme_style", "Light") == "Dark")
-        self.accent_color = [0.09, 0.52, 0.66, 1]
-        if is_dark:
-            self.card_bg_color = [0.14, 0.16, 0.20, 1]
-            self.chip_active_bg = [0.09, 0.52, 0.66, 1]
+        palette = getattr(app, "kivy_palette", None) if app else None
+        if palette:
+            self.accent_color = palette["primary"]
+            self.card_bg_color = palette["surface"]
+            self.chip_active_bg = palette["primary"]
             self.chip_active_text = [1, 1, 1, 1]
-            self.chip_inactive_bg = [0.24, 0.27, 0.32, 1]
-            self.chip_inactive_text = [0.88, 0.9, 0.94, 1]
+            self.chip_inactive_bg = palette["background"]
+            self.chip_inactive_text = palette["text_secondary"]
         else:
-            self.card_bg_color = [0.97, 0.99, 1, 1]
-            self.chip_active_bg = [0.09, 0.52, 0.66, 1]
+            from gf_mobile.ui.theme import get_kivy_palette
+
+            fallback = get_kivy_palette()
+            self.accent_color = fallback["primary"]
+            self.card_bg_color = fallback["surface"]
+            self.chip_active_bg = fallback["primary"]
             self.chip_active_text = [1, 1, 1, 1]
-            self.chip_inactive_bg = [0.88, 0.93, 0.97, 1]
-            self.chip_inactive_text = [0.2, 0.3, 0.38, 1]
+            self.chip_inactive_bg = fallback["background"]
+            self.chip_inactive_text = fallback["text_secondary"]
 
     @staticmethod
     def _short_error(exc: Exception) -> str:

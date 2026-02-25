@@ -4,7 +4,7 @@ Profile screen.
 
 from kivy.app import App
 from kivy.lang import Builder
-from kivy.properties import BooleanProperty, StringProperty
+from kivy.properties import BooleanProperty, ListProperty, StringProperty
 from kivy.uix.screenmanager import Screen
 
 from gf_mobile.core.session_manager import SessionManager
@@ -33,7 +33,7 @@ Builder.load_string(
             adaptive_height: True
             padding: "12dp"
             spacing: "6dp"
-            md_bg_color: (0.97, 0.99, 1, 1)
+            md_bg_color: root.surface_color
 
             MDLabel:
                 text: "Cuenta"
@@ -66,12 +66,12 @@ Builder.load_string(
 
                 MDRaisedButton:
                     text: "Light"
-                    md_bg_color: (0.09, 0.52, 0.66, 1) if root.current_theme == "light" else (0.82, 0.86, 0.90, 1)
+                    md_bg_color: root.primary_color if root.current_theme == "light" else root.surface_color
                     on_release: root.set_theme("light")
 
                 MDRaisedButton:
                     text: "Dark"
-                    md_bg_color: (0.09, 0.52, 0.66, 1) if root.current_theme == "dark" else (0.82, 0.86, 0.90, 1)
+                    md_bg_color: root.primary_color if root.current_theme == "dark" else root.surface_color
                     on_release: root.set_theme("dark")
 
         MDCard:
@@ -86,21 +86,16 @@ Builder.load_string(
                 font_style: "Body2"
 
             MDTextField:
-                id: quick_income_values
-                hint_text: "Ingresos (+): ej 5,10,15"
+                id: quick_step_value
+                hint_text: "Paso +/-: ej 5"
                 mode: "rectangle"
-                text: root.quick_income_text
-
-            MDTextField:
-                id: quick_expense_values
-                hint_text: "Gastos (-): ej 5,10,15"
-                mode: "rectangle"
-                text: root.quick_expense_text
+                text: root.quick_step_text
 
             MDRaisedButton:
-                text: "Guardar accesos"
-                md_bg_color: (0.09, 0.52, 0.66, 1)
-                on_release: root.save_quick_values()
+                text: "Guardar paso"
+                md_bg_color: root.primary_color
+                on_release: root.save_quick_step()
+
 
             MDBoxLayout:
                 size_hint_y: None
@@ -129,13 +124,13 @@ Builder.load_string(
 
             MDRaisedButton:
                 text: "Estado de sincronizacion"
-                md_bg_color: (0.09, 0.52, 0.66, 1)
+                md_bg_color: root.primary_color
                 on_release: root.open_sync_status()
 
             MDFlatButton:
                 text: "Cerrar sesion"
                 theme_text_color: "Custom"
-                text_color: (0.85, 0.22, 0.20, 1)
+                text_color: root.error_color
                 on_release: root.logout()
 
         MDLabel:
@@ -162,18 +157,27 @@ class ProfileScreen(Screen):
     email_text = StringProperty("Email: -")
     session_text = StringProperty("Sesion: -")
     current_theme = StringProperty("light")
-    quick_income_text = StringProperty("5,10,15")
-    quick_expense_text = StringProperty("5,10,15")
+    quick_step_text = StringProperty("5")
     quick_entry_enabled = BooleanProperty(True)
+    primary_color = ListProperty([0, 0, 0, 1])
+    surface_color = ListProperty([1, 1, 1, 1])
+    error_color = ListProperty([0.8, 0, 0, 1])
 
     def on_enter(self):
         if "nav_bar" in self.ids:
             self.ids.nav_bar.screen_manager = self.manager
             self.ids.nav_bar.current_screen = "profile"
+        self._apply_theme_colors()
+        app = App.get_running_app()
+        if app:
+            app.bind(kivy_palette=lambda *_: self._apply_theme_colors())
         self._refresh_profile_info()
         self._refresh_theme_state()
         self._refresh_quick_values()
         self._refresh_quick_toggle()
+
+    def on_kv_post(self, base_widget):
+        self._apply_theme_colors()
 
     def _refresh_profile_info(self) -> None:
         info = SessionManager().get_session_info()
@@ -195,11 +199,10 @@ class ProfileScreen(Screen):
 
     def _refresh_quick_values(self) -> None:
         app = App.get_running_app()
-        if not app or not hasattr(app, "get_quick_button_values"):
+        if not app or not hasattr(app, "get_quick_step_value"):
             return
-        income, expense = app.get_quick_button_values()
-        self.quick_income_text = ",".join(str(int(v) if float(v).is_integer() else v) for v in income)
-        self.quick_expense_text = ",".join(str(int(v) if float(v).is_integer() else v) for v in expense)
+        step = app.get_quick_step_value()
+        self.quick_step_text = str(int(step) if float(step).is_integer() else step)
 
     def _refresh_quick_toggle(self) -> None:
         app = App.get_running_app()
@@ -216,24 +219,36 @@ class ProfileScreen(Screen):
             if hasattr(app, "apply_theme"):
                 app.apply_theme(theme_name)
             self.current_theme = theme_name
+            self._apply_theme_colors()
             self.status_message = "Tema actualizado"
         except Exception as exc:
             self.status_message = f"Error: {exc}"
 
+    def _apply_theme_colors(self) -> None:
+        app = App.get_running_app()
+        palette = getattr(app, "kivy_palette", None) if app else None
+        if not palette:
+            from gf_mobile.ui.theme import get_kivy_palette
+
+            palette = get_kivy_palette()
+        if palette:
+            self.primary_color = palette.get("primary", self.primary_color)
+            self.surface_color = palette.get("surface", self.surface_color)
+            self.error_color = palette.get("error", self.error_color)
+
     def open_sync_status(self) -> None:
         self.manager.current = "sync_status"
 
-    def save_quick_values(self) -> None:
+
+    def save_quick_step(self) -> None:
         app = App.get_running_app()
-        if not app or not hasattr(app, "save_quick_button_values"):
+        if not app or not hasattr(app, "save_quick_step_value"):
             return
         try:
-            income = self._parse_group_values(self.ids.quick_income_values.text)
-            expense = self._parse_group_values(self.ids.quick_expense_values.text)
-            app.save_quick_button_values(income, expense)
-            self.quick_income_text = ",".join(str(int(v) if float(v).is_integer() else v) for v in income)
-            self.quick_expense_text = ",".join(str(int(v) if float(v).is_integer() else v) for v in expense)
-            self.status_message = "Accesos rapidos guardados"
+            step = self._parse_step_value(self.ids.quick_step_value.text)
+            app.save_quick_step_value(step)
+            self.quick_step_text = str(int(step) if float(step).is_integer() else step)
+            self.status_message = "Paso guardado"
         except Exception as exc:
             self.status_message = f"Error: {exc}"
 
@@ -249,13 +264,13 @@ class ProfileScreen(Screen):
             self.status_message = f"Error: {exc}"
 
     @staticmethod
-    def _parse_group_values(text: str):
-        values = [x.strip() for x in (text or "").split(",") if x.strip()]
-        if len(values) != 3:
-            raise ValueError("Debes indicar exactamente 3 valores")
-        result = [float(v) for v in values]
-        if any(v <= 0 for v in result):
-            raise ValueError("Los valores deben ser positivos")
+    def _parse_step_value(text: str) -> float:
+        value = str(text or "").strip()
+        if value == "":
+            raise ValueError("Debes indicar un valor")
+        result = float(value)
+        if result <= 0:
+            raise ValueError("El valor debe ser positivo")
         return result
 
     def logout(self) -> None:

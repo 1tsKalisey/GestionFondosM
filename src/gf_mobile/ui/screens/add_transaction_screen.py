@@ -73,7 +73,7 @@ Builder.load_string(
                     size_hint_y: None
                     height: "40dp"
                     background_normal: ""
-                    background_color: (0.09, 0.52, 0.66, 1)
+                    background_color: app.kivy_palette["primary"]
                     color: (1, 1, 1, 1)
                     on_text: root.on_type_selected(self.text)
 
@@ -95,7 +95,7 @@ Builder.load_string(
                     size_hint_y: None
                     height: "40dp"
                     background_normal: ""
-                    background_color: (0.09, 0.52, 0.66, 1)
+                    background_color: app.kivy_palette["primary"]
                     color: (1, 1, 1, 1)
                     on_text: root.on_category_selected(self.text)
 
@@ -117,7 +117,7 @@ Builder.load_string(
                     size_hint_y: None
                     height: "40dp"
                     background_normal: ""
-                    background_color: (0.09, 0.52, 0.66, 1)
+                    background_color: app.kivy_palette["primary"]
                     color: (1, 1, 1, 1)
                     on_text: root.on_account_selected(self.text)
 
@@ -132,7 +132,7 @@ Builder.load_string(
                 text: "Guardar"
                 size_hint_y: None
                 height: "44dp"
-                md_bg_color: (0.09, 0.52, 0.66, 1)
+                md_bg_color: app.kivy_palette["primary"]
                 on_release: root.on_save()
     """
 )
@@ -265,7 +265,15 @@ class AddTransactionScreen(Screen):
     def _show_popup(self, title: str, message: str) -> None:
         if self._dialog:
             self._dialog.dismiss()
-        button_color = (0.09, 0.52, 0.66, 1) if title == "Exito" else (0.84, 0.25, 0.22, 1)
+        app = App.get_running_app()
+        palette = getattr(app, "kivy_palette", None) if app else None
+        if palette:
+            button_color = palette["primary"] if title == "Exito" else palette["error"]
+        else:
+            from gf_mobile.ui.theme import get_kivy_palette
+
+            fallback = get_kivy_palette()
+            button_color = fallback["primary"] if title == "Exito" else fallback["error"]
         self._dialog = MDDialog(
             title=title,
             text=message,

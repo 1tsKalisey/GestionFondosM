@@ -77,11 +77,11 @@ Builder.load_string(
 class TransactionsResultsScreen(Screen):
     status_message = StringProperty("")
     active_filters = DictProperty({})
-    page_bg_color = ListProperty([0.94, 0.96, 0.99, 1])
-    accent_color = ListProperty([0.09, 0.52, 0.66, 1])
-    card_even_bg = ListProperty([0.98, 0.99, 1, 1])
-    card_odd_bg = ListProperty([0.95, 0.98, 1, 1])
-    empty_bg = ListProperty([0.96, 0.97, 0.99, 1])
+    page_bg_color = ListProperty([0, 0, 0, 0])
+    accent_color = ListProperty([0, 0, 0, 0])
+    card_even_bg = ListProperty([0, 0, 0, 0])
+    card_odd_bg = ListProperty([0, 0, 0, 0])
+    empty_bg = ListProperty([0, 0, 0, 0])
 
     def __init__(self, transaction_service=None, **kwargs):
         super().__init__(**kwargs)
@@ -135,7 +135,15 @@ class TransactionsResultsScreen(Screen):
         category_name = tx.category.name if hasattr(tx, "category") and tx.category else "Sin categoria"
         tx_type = (tx.type or "").lower()
         amount = float(tx.amount) if tx.amount is not None else 0.0
-        amount_color = (0.12, 0.56, 0.27, 1) if tx_type == "ingreso" else (0.84, 0.25, 0.22, 1)
+        app = App.get_running_app()
+        palette = getattr(app, "kivy_palette", None) if app else None
+        if palette:
+            amount_color = palette["success"] if tx_type == "ingreso" else palette["error"]
+        else:
+            from gf_mobile.ui.theme import get_kivy_palette
+
+            fallback = get_kivy_palette()
+            amount_color = fallback["success"] if tx_type == "ingreso" else fallback["error"]
         badge_text = "INGRESO" if tx_type == "ingreso" else "GASTO" if tx_type == "gasto" else "MOV"
         date_text = tx.occurred_at.strftime("%d/%m/%Y")
 
@@ -265,15 +273,19 @@ class TransactionsResultsScreen(Screen):
 
     def _apply_theme_colors(self) -> None:
         app = App.get_running_app()
-        is_dark = bool(app and getattr(app.theme_cls, "theme_style", "Light") == "Dark")
-        self.accent_color = [0.09, 0.52, 0.66, 1]
-        if is_dark:
-            self.page_bg_color = [0.10, 0.11, 0.14, 1]
-            self.card_even_bg = [0.18, 0.20, 0.25, 1]
-            self.card_odd_bg = [0.16, 0.18, 0.23, 1]
-            self.empty_bg = [0.17, 0.19, 0.24, 1]
+        palette = getattr(app, "kivy_palette", None) if app else None
+        if palette:
+            self.accent_color = palette["primary"]
+            self.page_bg_color = palette["background"]
+            self.card_even_bg = palette["surface"]
+            self.card_odd_bg = palette["background"]
+            self.empty_bg = palette["surface"]
         else:
-            self.page_bg_color = [0.94, 0.96, 0.99, 1]
-            self.card_even_bg = [0.98, 0.99, 1, 1]
-            self.card_odd_bg = [0.95, 0.98, 1, 1]
-            self.empty_bg = [0.96, 0.97, 0.99, 1]
+            from gf_mobile.ui.theme import get_kivy_palette
+
+            fallback = get_kivy_palette()
+            self.accent_color = fallback["primary"]
+            self.page_bg_color = fallback["background"]
+            self.card_even_bg = fallback["surface"]
+            self.card_odd_bg = fallback["background"]
+            self.empty_bg = fallback["surface"]

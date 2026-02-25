@@ -20,42 +20,42 @@ Builder.load_string(
         icon: "view-dashboard"
         icon_size: "21sp"
         theme_text_color: "Custom"
-        text_color: (0.09, 0.52, 0.66, 1) if root.current_screen == "dashboard" else (0.45, 0.47, 0.52, 1)
+        text_color: app.kivy_palette["primary"] if root.current_screen == "dashboard" else app.kivy_palette["text_secondary"]
         on_release: root.navigate_to("dashboard")
 
     MDIconButton:
         icon: "swap-horizontal"
         icon_size: "21sp"
         theme_text_color: "Custom"
-        text_color: (0.09, 0.52, 0.66, 1) if root.current_screen == "transactions" else (0.45, 0.47, 0.52, 1)
+        text_color: app.kivy_palette["primary"] if root.current_screen == "transactions" else app.kivy_palette["text_secondary"]
         on_release: root.navigate_to("transactions")
 
     MDIconButton:
         icon: "shape"
         icon_size: "21sp"
         theme_text_color: "Custom"
-        text_color: (0.09, 0.52, 0.66, 1) if root.current_screen == "categories" else (0.45, 0.47, 0.52, 1)
+        text_color: app.kivy_palette["primary"] if root.current_screen == "categories" else app.kivy_palette["text_secondary"]
         on_release: root.navigate_to("categories")
 
     MDIconButton:
         icon: "wallet"
         icon_size: "21sp"
         theme_text_color: "Custom"
-        text_color: (0.09, 0.52, 0.66, 1) if root.current_screen == "budgets" else (0.45, 0.47, 0.52, 1)
+        text_color: app.kivy_palette["primary"] if root.current_screen == "budgets" else app.kivy_palette["text_secondary"]
         on_release: root.navigate_to("budgets")
 
     MDIconButton:
         icon: "chart-bar"
         icon_size: "21sp"
         theme_text_color: "Custom"
-        text_color: (0.09, 0.52, 0.66, 1) if root.current_screen == "reports" else (0.45, 0.47, 0.52, 1)
+        text_color: app.kivy_palette["primary"] if root.current_screen == "reports" else app.kivy_palette["text_secondary"]
         on_release: root.navigate_to("reports")
 
     MDIconButton:
         icon: "account-circle"
         icon_size: "21sp"
         theme_text_color: "Custom"
-        text_color: (0.09, 0.52, 0.66, 1) if root.current_screen == "profile" else (0.45, 0.47, 0.52, 1)
+        text_color: app.kivy_palette["primary"] if root.current_screen == "profile" else app.kivy_palette["text_secondary"]
         on_release: root.navigate_to("profile")
     """
 )

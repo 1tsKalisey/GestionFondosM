@@ -26,19 +26,16 @@ Builder.load_string(
             font_style: "H4"
             bold: True
 
-        MDLabel:
-            text: "Controla gastos y sincroniza en segundos"
-            halign: "left"
-            theme_text_color: "Hint"
-            font_style: "Body2"
-            size_hint_y: None
-            height: "24dp"
+        
 
         MDCard:
             orientation: "vertical"
             padding: "16dp"
             spacing: "12dp"
             radius: [16, 16, 16, 16]
+            size_hint_y: None
+            height: self.minimum_height
+            adaptive_height: True
 
             MDTextField:
                 id: email
@@ -69,11 +66,13 @@ Builder.load_string(
         MDLabel:
             text: root.status_message
             halign: "center"
-            theme_text_color: "Error"
+            theme_text_color: "Custom"
+            text_color: app.kivy_palette["error"]
             text_size: self.width, None
-            max_lines: 2
-            shorten: True
-            shorten_from: "right"
+            height: self.texture_size[1]
+            size_hint_y: None
+            valign: "top"
+            shorten: False
 
         Widget:
     """
