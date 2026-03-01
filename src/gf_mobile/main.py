@@ -505,8 +505,13 @@ class GestionFondosMApp(MDApp):
                 if initial_sync_service.needs_initial_sync():
                     print("Iniciando sincronizacion inicial...")
                     # Ejecutar sincronización inicial de forma sincrónica (es la primera vez)
-                    asyncio.run(initial_sync_service.perform_initial_sync())
-                    print("[OK] Sincronizacion inicial completada")
+                    try:
+                        asyncio.run(initial_sync_service.perform_initial_sync())
+                        print("[OK] Sincronizacion inicial completada")
+                    except Exception as exc:
+                        # No bloquear la sincronizacion incremental por errores de snapshot inicial.
+                        # Con esto se puede recuperar estado desde eventos remotos.
+                        print(f"[WARN] Sync inicial fallo, continuando con incremental: {exc}")
                 
                 # Luego ejecutar sincronización incremental normal
                 if self.sync_status_screen.sync_service:

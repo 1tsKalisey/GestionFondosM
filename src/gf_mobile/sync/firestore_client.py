@@ -259,7 +259,6 @@ class FirestoreClient:
         query_body = {
             "structuredQuery": {
                 "from": [{"collectionId": "accounts"}],
-                "where": None,
             }
         }
         try:
@@ -283,7 +282,6 @@ class FirestoreClient:
         query_body = {
             "structuredQuery": {
                 "from": [{"collectionId": "categories"}],
-                "where": None,
             }
         }
         try:
@@ -307,7 +305,6 @@ class FirestoreClient:
         query_body = {
             "structuredQuery": {
                 "from": [{"collectionId": "budgets"}],
-                "where": None,
             }
         }
         try:
@@ -331,7 +328,6 @@ class FirestoreClient:
         query_body = {
             "structuredQuery": {
                 "from": [{"collectionId": "transactions"}],
-                "where": None,
                 "limit": 1000,  # Límite para no descargar demasiado de una vez
             }
         }
