@@ -33,14 +33,20 @@ class SyncProtocol:
         self.device_id = device_id
         self.user_uid = user_uid
 
+    def _state_key(self, key: str) -> str:
+        suffix = (self.user_uid or "").strip()
+        return f"{key}:{suffix}" if suffix else key
+
     def _get_state(self, session: Session, key: str) -> Optional[str]:
-        item = session.query(SyncState).filter(SyncState.key == key).first()
+        namespaced_key = self._state_key(key)
+        item = session.query(SyncState).filter(SyncState.key == namespaced_key).first()
         return item.value if item else None
 
     def _set_state(self, session: Session, key: str, value: Optional[str]) -> None:
-        item = session.query(SyncState).filter(SyncState.key == key).first()
+        namespaced_key = self._state_key(key)
+        item = session.query(SyncState).filter(SyncState.key == namespaced_key).first()
         if not item:
-            item = SyncState(key=key, value=value)
+            item = SyncState(key=namespaced_key, value=value)
             session.add(item)
         else:
             item.value = value

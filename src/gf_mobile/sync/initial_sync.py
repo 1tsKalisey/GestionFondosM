@@ -42,14 +42,30 @@ class InitialSyncService:
         self.user_uid = user_uid
         self.user_id = user_id
 
+    def _state_key(self, base_key: str) -> str:
+        """Clave de estado namespaced por usuario remoto para evitar cruces entre cuentas."""
+        suffix = (self.user_uid or "").strip()
+        return f"{base_key}:{suffix}" if suffix else base_key
+
     def needs_initial_sync(self) -> bool:
-        """Verifica si es la primera sincronizaciÃ³n."""
+        """Verifica si es la primera sincronizacion para el usuario actual."""
         session = self.session_factory()
         try:
+            state_key = self._state_key("initial_sync_completed")
             state = session.query(SyncState).filter(
-                SyncState.key == "initial_sync_completed"
+                SyncState.key == state_key
             ).first()
-            return not state or state.value != "true"
+
+            if state and state.value == "true":
+                # Fallback seguro: si no hay datos base locales, reintentar sync inicial.
+                has_local_account = session.query(Account.id).filter(
+                    Account.user_id == self.user_id
+                ).first() is not None
+                has_local_category = session.query(Category.id).first() is not None
+                has_local_transaction = session.query(Transaction.id).first() is not None
+                return not (has_local_account or has_local_category or has_local_transaction)
+
+            return True
         finally:
             session.close()
 
@@ -260,27 +276,30 @@ class InitialSyncService:
         return None
 
     def _mark_initial_sync_completed(self, session: Session) -> None:
-        """Marca la sincronizaciÃ³n inicial como completada."""
+        """Marca la sincronizacion inicial como completada para el usuario actual."""
+        completed_key = self._state_key("initial_sync_completed")
         state = session.query(SyncState).filter(
-            SyncState.key == "initial_sync_completed"
+            SyncState.key == completed_key
         ).first()
-        
+
         if not state:
-            state = SyncState(key="initial_sync_completed", value="true")
+            state = SyncState(key=completed_key, value="true")
             session.add(state)
         else:
             state.value = "true"
-        
-        # Actualizar timestamp de Ãºltima sincronizaciÃ³n
+
+        # Actualizar timestamp de ultima sincronizacion (tambien namespaced por usuario).
+        last_applied_key = self._state_key("last_applied_at")
         last_sync = session.query(SyncState).filter(
-            SyncState.key == "last_applied_at"
+            SyncState.key == last_applied_key
         ).first()
+        now_value = datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')
         if not last_sync:
             last_sync = SyncState(
-                key="last_applied_at",
-                value=datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')
+                key=last_applied_key,
+                value=now_value
             )
             session.add(last_sync)
         else:
-            last_sync.value = datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')
+            last_sync.value = now_value
 
