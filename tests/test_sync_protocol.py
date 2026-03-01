@@ -11,7 +11,7 @@ from unittest.mock import AsyncMock
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-from gf_mobile.persistence.models import Base, SyncOutbox, generate_uuid
+from gf_mobile.persistence.models import Base, SyncOutbox, SyncState, generate_uuid
 from gf_mobile.sync.protocol import SyncProtocol
 from gf_mobile.sync.firestore_client import FirestoreClient
 
@@ -117,3 +117,34 @@ class TestSyncProtocol:
         assert isinstance(events, list)
         assert events[0]["id"] == "evt-1"
         assert token is None
+
+    @pytest.mark.asyncio
+    async def test_pull_and_apply_forces_one_time_full_replay(
+        self, session_factory, firestore_client_mock
+    ):
+        session = session_factory()
+        session.add(SyncState(key="last_applied_at:user-uid-1", value="2026-03-01T00:00:00Z"))
+        session.commit()
+        session.close()
+
+        firestore_client_mock.fetch_events_since = AsyncMock(return_value=([], None))
+        protocol = SyncProtocol(
+            session_factory=session_factory,
+            firestore_client=firestore_client_mock,
+            device_id="device-1",
+            user_uid="user-uid-1",
+        )
+
+        await protocol.pull_and_apply(page_size=50)
+
+        firestore_client_mock.fetch_events_since.assert_awaited_once()
+        kwargs = firestore_client_mock.fetch_events_since.await_args.kwargs
+        assert kwargs["since_timestamp"] is None
+
+        session = session_factory()
+        replay_flag = session.query(SyncState).filter(
+            SyncState.key == "full_event_replay_once:user-uid-1"
+        ).first()
+        assert replay_flag is not None
+        assert replay_flag.value == "true"
+        session.close()

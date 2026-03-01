@@ -13,6 +13,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from gf_mobile.core.exceptions import SyncError
+from gf_mobile.core.transaction_types import normalize_transaction_type
 from gf_mobile.persistence.models import (
     Account,
     Alert,
@@ -184,7 +185,7 @@ class MergerService:
                 account_id=account.id if account else payload.get("account_id"),
                 category_id=category.id if category else payload.get("category_id"),
                 subcategory_id=subcategory.id if subcategory else payload.get("subcategory_id"),
-                type=payload.get("type"),
+                type=normalize_transaction_type(payload.get("type")),
                 amount=float(payload.get("amount")) if payload.get("amount") is not None else 0.0,
                 currency=payload.get("currency") or "USD",
                 occurred_at=self._parse_dt(payload.get("occurred_at")),
@@ -210,12 +211,13 @@ class MergerService:
                 payload,
                 [
                     "currency",
-                    "type",
                     "merchant",
                     "note",
                     "server_id",
                 ],
             )
+            if "type" in payload:
+                existing.type = normalize_transaction_type(payload.get("type"))
             if account:
                 existing.account_id = account.id
             if category:

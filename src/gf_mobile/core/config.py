@@ -159,7 +159,7 @@ def get_settings() -> Settings:
                     _default_db_path(),
                 )
             )
-        ),
+        ).expanduser(),
         SYNC_INTERVAL_MINUTES=_as_int(values.get("GF_SYNC_INTERVAL"), 15),
         SYNC_TIMEOUT_SECONDS=_as_int(values.get("GF_SYNC_TIMEOUT"), 30),
         SYNC_MAX_RETRIES=_as_int(values.get("GF_SYNC_MAX_RETRIES"), 5),

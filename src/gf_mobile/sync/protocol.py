@@ -155,9 +155,12 @@ class SyncProtocol:
             merger = MergerService(self.session_factory)
             last_applied_at = self._get_state(session, "last_applied_at")
             last_applied_event_id = self._get_state(session, "last_applied_event_id")
+            replay_once_key = "full_event_replay_once"
+            should_replay_from_start = self._get_state(session, replay_once_key) != "true"
+            effective_since = None if should_replay_from_start else last_applied_at
             events, _ = await self.firestore_client.fetch_events_since(
                 user_uid=self.user_uid,
-                since_timestamp=last_applied_at,
+                since_timestamp=effective_since,
                 page_size=page_size,
             )
             applied = 0
@@ -184,6 +187,7 @@ class SyncProtocol:
 
             self._set_state(session, "last_applied_at", last_applied_at)
             self._set_state(session, "last_applied_event_id", last_applied_event_id)
+            self._set_state(session, replay_once_key, "true")
             session.commit()
             return applied
         except Exception as e:

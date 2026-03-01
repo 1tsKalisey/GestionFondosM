@@ -16,6 +16,7 @@ from kivymd.uix.button import MDFlatButton, MDRaisedButton
 from kivymd.uix.card import MDCard
 from kivymd.uix.label import MDLabel
 
+from gf_mobile.core.transaction_types import normalize_transaction_type
 
 Builder.load_string(
     """
@@ -133,7 +134,7 @@ class TransactionsResultsScreen(Screen):
 
     def _build_transaction_card(self, tx: Any, index: int = 0) -> MDCard:
         category_name = tx.category.name if hasattr(tx, "category") and tx.category else "Sin categoria"
-        tx_type = (tx.type or "").lower()
+        tx_type = normalize_transaction_type(tx.type)
         amount = float(tx.amount) if tx.amount is not None else 0.0
         app = App.get_running_app()
         palette = getattr(app, "kivy_palette", None) if app else None
@@ -222,7 +223,8 @@ class TransactionsResultsScreen(Screen):
         result = transactions
 
         if self.active_filters.get("type"):
-            result = [tx for tx in result if tx.type == self.active_filters["type"]]
+            wanted_type = normalize_transaction_type(self.active_filters["type"])
+            result = [tx for tx in result if normalize_transaction_type(tx.type) == wanted_type]
 
         if self.active_filters.get("categories"):
             selected_categories = set(self.active_filters["categories"])

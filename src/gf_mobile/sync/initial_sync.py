@@ -7,14 +7,14 @@ Se ejecuta una sola vez al primer login en el dispositivo mÃ³vil.
 
 from __future__ import annotations
 
-import json
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import Optional, List, Dict, Any
 
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from gf_mobile.core.exceptions import SyncError
+from gf_mobile.core.transaction_types import normalize_transaction_type
 from gf_mobile.persistence.models import Account, Category, Budget, Transaction, SyncState
 from gf_mobile.sync.firestore_client import FirestoreClient
 
@@ -57,13 +57,17 @@ class InitialSyncService:
             ).first()
 
             if state and state.value == "true":
-                # Fallback seguro: si no hay datos base locales, reintentar sync inicial.
+                # Fallback seguro: si no hay transacciones locales, reintentar sync inicial.
+                # Esto evita quedar "bloqueado" si una sync inicial previa se marco completa
+                # pero no trajo movimientos remotos.
+                has_local_transaction = session.query(Transaction.id).first() is not None
+                if not has_local_transaction:
+                    return True
                 has_local_account = session.query(Account.id).filter(
                     Account.user_id == self.user_id
                 ).first() is not None
                 has_local_category = session.query(Category.id).first() is not None
-                has_local_transaction = session.query(Transaction.id).first() is not None
-                return not (has_local_account or has_local_category or has_local_transaction)
+                return not (has_local_account and has_local_category and has_local_transaction)
 
             return True
         finally:
@@ -235,7 +239,7 @@ class InitialSyncService:
                     id=tx_id,
                     account_id=tx_data.get("account_id"),
                     category_id=local_category_id,
-                    type=tx_data.get("type"),
+                    type=normalize_transaction_type(tx_data.get("type")),
                     amount=float(tx_data.get("amount", 0)),
                     currency=tx_data.get("currency", "EUR"),
                     occurred_at=datetime.fromisoformat(tx_data.get("occurred_at")),
@@ -287,19 +291,4 @@ class InitialSyncService:
             session.add(state)
         else:
             state.value = "true"
-
-        # Actualizar timestamp de ultima sincronizacion (tambien namespaced por usuario).
-        last_applied_key = self._state_key("last_applied_at")
-        last_sync = session.query(SyncState).filter(
-            SyncState.key == last_applied_key
-        ).first()
-        now_value = datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')
-        if not last_sync:
-            last_sync = SyncState(
-                key=last_applied_key,
-                value=now_value
-            )
-            session.add(last_sync)
-        else:
-            last_sync.value = now_value
 

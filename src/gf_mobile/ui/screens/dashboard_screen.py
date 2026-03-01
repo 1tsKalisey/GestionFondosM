@@ -8,6 +8,7 @@ from kivy.lang import Builder
 from kivy.properties import NumericProperty, StringProperty
 from kivy.uix.screenmanager import Screen
 
+from gf_mobile.core.transaction_types import normalize_transaction_type
 from gf_mobile.ui.navigation import NavigationBar
 
 
@@ -294,28 +295,74 @@ class DashboardScreen(Screen):
             month_transactions = [
                 tx for tx in transactions if start_date.date() <= tx.occurred_at.date() <= end_date.date()
             ]
+            period_transactions = month_transactions
+            period_label = f"{start_date.strftime('%d %b')} - {end_date.strftime('%d %b, %Y')}"
+            using_fallback_period = False
+            if not month_transactions and transactions:
+                fallback_start = today - timedelta(days=30)
+                period_transactions = [
+                    tx for tx in transactions if fallback_start.date() <= tx.occurred_at.date() <= today.date()
+                ]
+                period_label = f"Ultimos 30 dias ({fallback_start.strftime('%d %b')} - {today.strftime('%d %b, %Y')})"
+                using_fallback_period = True
 
-            total_income = sum(tx.amount for tx in month_transactions if tx.type == "ingreso")
-            total_expenses = sum(tx.amount for tx in month_transactions if tx.type == "gasto")
-            balance = total_income - total_expenses
-            savings_pct = (balance / total_income * 100) if total_income > 0 else 0
+            total_income = sum(
+                tx.amount for tx in period_transactions if normalize_transaction_type(tx.type) == "ingreso"
+            )
+            total_expenses = sum(
+                tx.amount for tx in period_transactions if normalize_transaction_type(tx.type) == "gasto"
+            )
+            period_balance = total_income - total_expenses
+            total_balance = self._calculate_total_balance(transactions)
+            savings_pct = (period_balance / total_income * 100) if total_income > 0 else 0
 
-            self.balance_text = f"EUR {balance:.2f}"
-            self.balance_status = "Positivo" if balance >= 0 else "Negativo"
+            self.balance_text = f"EUR {total_balance:.2f}"
+            self.balance_status = "Positivo" if total_balance >= 0 else "Negativo"
             self.income_text = f"EUR {total_income:.2f}"
-            self.income_status = f"{len([tx for tx in month_transactions if tx.type == 'ingreso'])} ingresos"
+            self.income_status = (
+                f"{len([tx for tx in period_transactions if normalize_transaction_type(tx.type) == 'ingreso'])} ingresos"
+            )
             self.expenses_text = f"EUR {total_expenses:.2f}"
-            self.expense_status = f"{len([tx for tx in month_transactions if tx.type == 'gasto'])} gastos"
+            self.expense_status = (
+                f"{len([tx for tx in period_transactions if normalize_transaction_type(tx.type) == 'gasto'])} gastos"
+            )
             self.savings_percentage_text = f"{savings_pct:.1f}%"
             self.savings_status = "Bueno" if savings_pct >= 20 else "Mejorable"
 
-            self._update_budget_distribution(month_transactions)
-            self._update_health_score(balance, total_income, total_expenses)
+            self._update_budget_distribution(period_transactions)
+            self._update_health_score(period_balance, total_income, total_expenses)
 
-            self.date_range = f"{start_date.strftime('%d %b')} - {end_date.strftime('%d %b, %Y')}"
-            self.status_message = f"{len(month_transactions)} movimientos este mes"
+            self.date_range = period_label
+            if using_fallback_period:
+                self.status_message = (
+                    f"{len(period_transactions)} movimientos en ultimos 30 dias "
+                    "(sin movimientos en este mes)"
+                )
+            else:
+                self.status_message = f"{len(month_transactions)} movimientos este mes"
         except Exception as exc:
             self.status_message = self._short_error(exc)
+
+    def _calculate_total_balance(self, transactions) -> float:
+        opening_balance_total = 0.0
+        session = getattr(self.transaction_service, "session", None)
+        if session is not None:
+            try:
+                from gf_mobile.persistence.models import Account
+
+                opening_balance_total = sum(
+                    float(account.opening_balance or 0.0) for account in session.query(Account).all()
+                )
+            except Exception:
+                opening_balance_total = 0.0
+
+        income_total = sum(
+            float(tx.amount or 0.0) for tx in transactions if normalize_transaction_type(tx.type) == "ingreso"
+        )
+        expense_total = sum(
+            float(tx.amount or 0.0) for tx in transactions if normalize_transaction_type(tx.type) == "gasto"
+        )
+        return opening_balance_total + income_total - expense_total
 
     def _update_budget_distribution(self, transactions) -> None:
         try:
@@ -324,7 +371,7 @@ class DashboardScreen(Screen):
             savings_amount = 0.0
 
             for tx in transactions:
-                if tx.type != "gasto":
+                if normalize_transaction_type(tx.type) != "gasto":
                     continue
                 amount = float(tx.amount) if tx.amount else 0.0
                 if hasattr(tx, "category") and tx.category:

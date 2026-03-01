@@ -11,6 +11,7 @@ from kivy.uix.scrollview import ScrollView
 from kivymd.uix.button import MDRaisedButton
 from kivymd.uix.list import OneLineListItem
 
+from gf_mobile.core.transaction_types import normalize_transaction_type
 from gf_mobile.ui.navigation import NavigationBar
 
 
@@ -164,7 +165,7 @@ class ReportsScreen(Screen):
             self.ids.category_summary.clear_widgets()
             category_totals = {}
             for tx in transactions:
-                if tx.type != "gasto":
+                if normalize_transaction_type(tx.type) != "gasto":
                     continue
                 cat_name = "Sin categoria"
                 if hasattr(tx, "category") and tx.category:
@@ -188,7 +189,7 @@ class ReportsScreen(Screen):
             budget_groups = {"Necesidades": 0, "Ocio/Deseos": 0, "Ahorro/Deuda": 0, "Otros": 0}
 
             for tx in transactions:
-                if tx.type != "gasto":
+                if normalize_transaction_type(tx.type) != "gasto":
                     continue
                 group = "Otros"
                 if hasattr(tx, "category") and tx.category:
