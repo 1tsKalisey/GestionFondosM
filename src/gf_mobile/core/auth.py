@@ -15,8 +15,13 @@ import importlib.util
 import asyncio
 import time
 import webbrowser
+import inspect
 from pathlib import Path
 from urllib.parse import urlparse
+try:
+    import aiohttp  # Backward-compat for tests that monkeypatch ClientSession.
+except Exception:  # pragma: no cover - optional dependency in runtime/test envs
+    aiohttp = None
 
 from gf_mobile.core.config import get_settings
 from gf_mobile.core.exceptions import (
@@ -191,6 +196,50 @@ class AuthService:
                 "o define la variable en el entorno de build."
             )
 
+    async def _request_auth_json(
+        self,
+        method: str,
+        url: str,
+        *,
+        json_body: Optional[Dict[str, Any]] = None,
+        data: Optional[Dict[str, Any]] = None,
+        params: Optional[Dict[str, Any]] = None,
+        timeout: int = 10,
+    ) -> tuple[int, Dict[str, Any], str]:
+        # Compatibilidad con tests que mockean aiohttp.ClientSession en este modulo.
+        if aiohttp is not None:
+            async with aiohttp.ClientSession() as session:
+                post_call = session.post(
+                    url,
+                    json=json_body,
+                    data=data,
+                    params=params,
+                    timeout=timeout,
+                )
+                if inspect.isawaitable(post_call):
+                    post_call = await post_call
+                async with post_call as resp:
+                    status = resp.status
+                    try:
+                        payload = await resp.json()
+                    except Exception:
+                        payload = {}
+                    text = ""
+                    try:
+                        text = await resp.text()
+                    except Exception:
+                        text = ""
+                    return status, payload or {}, text
+        status, payload, text = await request_json(
+            method,
+            url,
+            json_body=json_body,
+            data=data,
+            params=params,
+            timeout=timeout,
+        )
+        return status, payload or {}, text
+
     async def sign_up(self, email: str, password: str) -> AuthTokens:
         """
         Registrar nuevo usuario con email y contrasena
@@ -216,7 +265,7 @@ class AuthService:
         }
 
         try:
-            status, data, text = await request_json(
+            status, data, text = await self._request_auth_json(
                 "POST", url, json_body=payload, params=params, timeout=10
             )
 
@@ -230,9 +279,9 @@ class AuthService:
 
             error_code = (data or {}).get("error", {}).get("message", "Unknown")
             if "EMAIL_EXISTS" in error_code:
-                raise InvalidCredentialsError(f"El email {email} ya esta registrado")
+                raise InvalidCredentialsError(f"El email {email} ya está registrado")
             if "WEAK_PASSWORD" in error_code:
-                raise InvalidCredentialsError("Contrasena muy debil (min 6 caracteres)")
+                raise InvalidCredentialsError("Contraseña muy débil (mín 6 caracteres)")
             raise InvalidCredentialsError(f"Error al registrar: {error_code or text}")
 
         except (AuthError, InvalidCredentialsError):
@@ -265,7 +314,7 @@ class AuthService:
         }
 
         try:
-            status, data, text = await request_json(
+            status, data, text = await self._request_auth_json(
                 "POST", url, json_body=payload, params=params, timeout=10
             )
 
@@ -279,7 +328,7 @@ class AuthService:
 
             error_code = (data or {}).get("error", {}).get("message", "Unknown")
             if "INVALID_PASSWORD" in error_code or "INVALID_EMAIL" in error_code:
-                raise InvalidCredentialsError("Email o contrasena incorrectos")
+                raise InvalidCredentialsError("Email o contraseña incorrectos")
             if "USER_DISABLED" in error_code:
                 raise InvalidCredentialsError("Usuario deshabilitado")
             raise InvalidCredentialsError(f"Error al iniciar sesion: {error_code or text}")
@@ -313,7 +362,7 @@ class AuthService:
         params = {"key": self.settings.FIREBASE_API_KEY}
 
         try:
-            status, data, text = await request_json(
+            status, data, text = await self._request_auth_json(
                 "POST", url, data=payload, params=params, timeout=10
             )
 

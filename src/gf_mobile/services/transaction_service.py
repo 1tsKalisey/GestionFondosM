@@ -636,7 +636,7 @@ class TransactionService:
             "subcategory_id": subcategory.sync_id if subcategory else None,
             "subcategory_name": subcategory.name if subcategory else None,
             "type": transaction.type,
-            "amount": float(transaction.amount),
+            "amount": str(float(transaction.amount)),
             "currency": transaction.currency,
             "occurred_at": self._format_timestamp(transaction.occurred_at) if transaction.occurred_at else None,
             "merchant": merchant,

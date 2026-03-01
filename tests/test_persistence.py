@@ -3,8 +3,8 @@ Tests para persistencia SQLite y modelos
 """
 
 import pytest
+import os
 import tempfile
-from pathlib import Path
 from datetime import datetime
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
@@ -26,17 +26,21 @@ from gf_mobile.persistence.models import (
 @pytest.fixture
 def temp_db():
     """Crear BD temporal para tests"""
-    with tempfile.TemporaryDirectory() as tmpdir:
-        db_path = Path(tmpdir) / "test.db"
-        db_url = f"sqlite:///{db_path}"
+    with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as f:
+        db_path = f.name
+    db_url = f"sqlite:///{db_path}"
 
-        engine = create_engine(db_url)
-        Base.metadata.create_all(engine)
+    engine = create_engine(db_url)
+    Base.metadata.create_all(engine)
 
-        SessionFactory = sessionmaker(bind=engine)
-        yield SessionFactory, engine
+    SessionFactory = sessionmaker(bind=engine)
+    yield SessionFactory, engine
 
-        engine.dispose()
+    engine.dispose()
+    try:
+        os.remove(db_path)
+    except OSError:
+        pass
 
 
 class TestModels:

@@ -69,3 +69,8 @@ env/
 # Project specific
 *.apk
 *.aab
+
+# Local temp folders/files
+.tmp_test/
+pytest-cache-files-*/
+node_modules/

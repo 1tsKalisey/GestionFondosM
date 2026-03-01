@@ -1,8 +1,8 @@
-"""
+﻿"""
 InitialSyncService
 
-Maneja la sincronización inicial de datos base desde Firestore.
-Se ejecuta una sola vez al primer login en el dispositivo móvil.
+Maneja la sincronizaciÃ³n inicial de datos base desde Firestore.
+Se ejecuta una sola vez al primer login en el dispositivo mÃ³vil.
 """
 
 from __future__ import annotations
@@ -11,6 +11,7 @@ import json
 from datetime import datetime, timezone
 from typing import Optional, List, Dict, Any
 
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from gf_mobile.core.exceptions import SyncError
@@ -23,10 +24,10 @@ class InitialSyncService:
     Sincroniza todos los datos base desde Firestore la primera vez.
     
     1. Descarga todas las cuentas (accounts)
-    2. Descarga todas las categorías
+    2. Descarga todas las categorÃ­as
     3. Descarga todos los presupuestos
     4. Descarga todas las transacciones existentes
-    5. Marca como completada la sincronización inicial
+    5. Marca como completada la sincronizaciÃ³n inicial
     """
 
     def __init__(
@@ -42,7 +43,7 @@ class InitialSyncService:
         self.user_id = user_id
 
     def needs_initial_sync(self) -> bool:
-        """Verifica si es la primera sincronización."""
+        """Verifica si es la primera sincronizaciÃ³n."""
         session = self.session_factory()
         try:
             state = session.query(SyncState).filter(
@@ -54,7 +55,7 @@ class InitialSyncService:
 
     async def perform_initial_sync(self) -> Dict[str, int]:
         """
-        Realiza la sincronización inicial de todos los datos base.
+        Realiza la sincronizaciÃ³n inicial de todos los datos base.
         
         Returns:
             Dict con contadores de datos importados
@@ -71,7 +72,7 @@ class InitialSyncService:
             # 1. Descargar y aplicar cuentas
             imported["accounts"] = await self._sync_accounts(session)
             
-            # 2. Descargar y aplicar categorías
+            # 2. Descargar y aplicar categorÃ­as
             imported["categories"] = await self._sync_categories(session)
             
             # 3. Descargar y aplicar presupuestos
@@ -88,7 +89,7 @@ class InitialSyncService:
 
         except Exception as e:
             session.rollback()
-            raise SyncError(f"Error en sincronización inicial: {str(e)}")
+            raise SyncError(f"Error en sincronizaciÃ³n inicial: {str(e)}")
         finally:
             session.close()
 
@@ -122,7 +123,7 @@ class InitialSyncService:
             raise SyncError(f"Error sincronizando cuentas: {str(e)}")
 
     async def _sync_categories(self, session: Session) -> int:
-        """Descarga y aplica todas las categorías."""
+        """Descarga y aplica todas las categorÃ­as."""
         try:
             categories_data = await self.firestore_client.get_all_categories(
                 user_uid=self.user_uid
@@ -131,7 +132,8 @@ class InitialSyncService:
             count = 0
             for cat_data in categories_data:
                 remote_sync_id = str(cat_data.get("sync_id") or cat_data.get("id") or "")
-                name = cat_data.get("name")
+                name = (cat_data.get("name") or "").strip()
+                budget_group = (cat_data.get("budget_group") or "Otros").strip() or "Otros"
                 if not name:
                     continue
                 existing = None
@@ -141,17 +143,18 @@ class InitialSyncService:
                     ).first()
                 if not existing:
                     existing = session.query(Category).filter(
-                        Category.name == name
+                        func.lower(func.trim(Category.name)) == name.lower(),
+                        func.lower(func.trim(Category.budget_group)) == budget_group.lower(),
                     ).first()
                 if existing:
-                    # Si ya existía por nombre, completar sync_id para mapear bien.
+                    # Si ya existia por nombre+grupo, completar sync_id para mapear bien.
                     if remote_sync_id and not existing.sync_id:
                         existing.sync_id = remote_sync_id
                     continue
-                
+
                 category = Category(
                     name=name,
-                    budget_group=cat_data.get("budget_group", "Otros"),
+                    budget_group=budget_group,
                     sync_id=remote_sync_id or None,
                 )
                 session.add(category)
@@ -159,7 +162,7 @@ class InitialSyncService:
             
             return count
         except Exception as e:
-            raise SyncError(f"Error sincronizando categorías: {str(e)}")
+            raise SyncError(f"Error sincronizando categorÃ­as: {str(e)}")
 
     async def _sync_budgets(self, session: Session) -> int:
         """Descarga y aplica todos los presupuestos."""
@@ -177,7 +180,7 @@ class InitialSyncService:
                     session, budget_data.get("category_id")
                 )
                 if local_category_id is None:
-                    # Presupuesto inválido sin categoría local mapeable.
+                    # Presupuesto invÃ¡lido sin categorÃ­a local mapeable.
                     continue
                 
                 budget = Budget(
@@ -248,7 +251,7 @@ class InitialSyncService:
         if cat:
             return cat.id
 
-        # Compatibilidad: si vino como id numérico local serializado.
+        # Compatibilidad: si vino como id numÃ©rico local serializado.
         if remote_value.isdigit():
             cat = session.query(Category).filter(Category.id == int(remote_value)).first()
             if cat:
@@ -257,7 +260,7 @@ class InitialSyncService:
         return None
 
     def _mark_initial_sync_completed(self, session: Session) -> None:
-        """Marca la sincronización inicial como completada."""
+        """Marca la sincronizaciÃ³n inicial como completada."""
         state = session.query(SyncState).filter(
             SyncState.key == "initial_sync_completed"
         ).first()
@@ -268,7 +271,7 @@ class InitialSyncService:
         else:
             state.value = "true"
         
-        # Actualizar timestamp de última sincronización
+        # Actualizar timestamp de Ãºltima sincronizaciÃ³n
         last_sync = session.query(SyncState).filter(
             SyncState.key == "last_applied_at"
         ).first()
@@ -280,3 +283,4 @@ class InitialSyncService:
             session.add(last_sync)
         else:
             last_sync.value = datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')
+

@@ -79,27 +79,27 @@ class ThemeManager:
     
     # Definiciones de temas
     LIGHT_THEME = ThemeColors(
-        primary="#0F766E",          # Teal 700
-        accent="#F97316",           # Orange 500
-        background="#F8FAFC",       # Slate 50
-        surface="#FFFFFF",          # White
-        text_primary="#0F172A",     # Slate 900
-        text_secondary="#64748B",   # Slate 500
-        success="#16A34A",          # Green 600
-        warning="#D97706",          # Amber 600
-        error="#DC2626",            # Red 600
+        primary="#2196F3",
+        accent="#FF5722",
+        background="#FFFFFF",
+        surface="#F5F5F5",
+        text_primary="#212121",
+        text_secondary="#757575",
+        success="#4CAF50",
+        warning="#FFC107",
+        error="#F44336",
     )
     
     DARK_THEME = ThemeColors(
-        primary="#0D9488",          # Teal 600
-        accent="#FB923C",           # Orange 400
-        background="#0B1120",       # Slate 950
-        surface="#111827",          # Slate 900
-        text_primary="#F8FAFC",     # Slate 50
-        text_secondary="#94A3B8",   # Slate 400
-        success="#22C55E",          # Green 500
-        warning="#F59E0B",          # Amber 500
-        error="#EF4444",            # Red 500
+        primary="#1976D2",
+        accent="#FFB74D",
+        background="#121212",
+        surface="#1E1E1E",
+        text_primary="#FFFFFF",
+        text_secondary="#B0B0B0",
+        success="#66BB6A",
+        warning="#FFD54F",
+        error="#EF5350",
     )
     
     # Temas disponibles

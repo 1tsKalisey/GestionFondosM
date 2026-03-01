@@ -1,7 +1,7 @@
-"""
+﻿"""
 MergerService
 
-Aplica eventos remotos a la base local con resolución simple de conflictos.
+Aplica eventos remotos a la base local con resoluciÃ³n simple de conflictos.
 """
 
 from __future__ import annotations
@@ -9,6 +9,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any, Dict, Iterable, Optional, Tuple
 
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from gf_mobile.core.exceptions import SyncError
@@ -35,7 +36,7 @@ class MergerService:
         self.session_factory = session_factory
 
     def apply_events(self, events: Iterable[Dict[str, Any]]) -> Optional[str]:
-        """Aplica una lista de eventos y retorna el último timestamp aplicado."""
+        """Aplica una lista de eventos y retorna el Ãºltimo timestamp aplicado."""
         session = self.session_factory()
         last_timestamp: Optional[str] = None
         try:
@@ -54,6 +55,30 @@ class MergerService:
 
     def apply_event(self, session: Session, event: Dict[str, Any]) -> None:
         event_type = event.get("type")
+        legacy_entity_type = event.get("entity_type")
+        legacy_operation = event.get("operation")
+        if not event_type and legacy_entity_type and legacy_operation:
+            mapping = {
+                ("transaction", "create"): "txn_created",
+                ("transaction", "update"): "txn_updated",
+                ("transaction", "delete"): "txn_deleted",
+                ("budget", "create"): "budget_created",
+                ("budget", "update"): "budget_updated",
+                ("budget", "delete"): "budget_deleted",
+                ("recurring", "create"): "recurring_created",
+                ("recurring", "update"): "recurring_updated",
+                ("recurring", "delete"): "recurring_deleted",
+                ("alert", "create"): "alert_created",
+                ("alert", "update"): "alert_updated",
+                ("alert", "delete"): "alert_deleted",
+                ("goal", "create"): "goal_created",
+                ("goal", "update"): "goal_updated",
+                ("goal", "delete"): "goal_deleted",
+                ("account", "create"): "account_created",
+                ("account", "update"): "account_updated",
+                ("account", "delete"): "account_deleted",
+            }
+            event_type = mapping.get((legacy_entity_type, legacy_operation))
         payload = event.get("payload") or {}
 
         # Transactions
@@ -171,7 +196,12 @@ class MergerService:
             )
             session.add(tx)
             session.flush()
-            self._merge_transaction_tags(session, tx, payload.get("tags", []))
+            self._merge_transaction_tags(
+                session,
+                tx,
+                payload.get("tags", []),
+                payload.get("tag_ids", []),
+            )
             return
 
         if self._is_newer(existing.updated_at, incoming_updated):
@@ -200,13 +230,29 @@ class MergerService:
                 existing.updated_at = self._parse_dt(incoming_updated)
             existing.synced = True
             existing.conflict_resolved = True
-            self._merge_transaction_tags(session, existing, payload.get("tags", []))
+            self._merge_transaction_tags(
+                session,
+                existing,
+                payload.get("tags", []),
+                payload.get("tag_ids", []),
+            )
 
-    def _merge_transaction_tags(self, session: Session, tx: Transaction, tag_names: Iterable[str]) -> None:
-        if tag_names is None:
+    def _merge_transaction_tags(
+        self,
+        session: Session,
+        tx: Transaction,
+        tag_names: Iterable[str] | None,
+        tag_ids: Iterable[int] | None = None,
+    ) -> None:
+        if tag_names is None and tag_ids is None:
             return
         session.query(TransactionTag).filter(TransactionTag.transaction_id == tx.id).delete()
-        for name in tag_names:
+        names = list(tag_names or [])
+        ids = list(tag_ids or [])
+        if ids:
+            found_tags = session.query(Tag).filter(Tag.id.in_(ids)).all()
+            names.extend(tag.name for tag in found_tags if tag and tag.name)
+        for name in names:
             tag = session.query(Tag).filter(Tag.name == name).first()
             if not tag:
                 tag = Tag(name=name)
@@ -241,8 +287,11 @@ class MergerService:
         return account
 
     def _ensure_category(self, session: Session, sync_id: Optional[str], name: Optional[str]) -> Optional[Category]:
-        if not sync_id and name:
-            existing = session.query(Category).filter(Category.name == name).first()
+        normalized_name = (name or "Sin categoria").strip()
+        if not sync_id and normalized_name:
+            existing = session.query(Category).filter(
+                func.lower(func.trim(Category.name)) == normalized_name.lower()
+            ).first()
             if existing and not existing.sync_id:
                 existing.sync_id = generate_uuid()
             return existing
@@ -251,9 +300,19 @@ class MergerService:
         category = session.query(Category).filter(Category.sync_id == sync_id).first()
         if category:
             return category
+
+        existing = session.query(Category).filter(
+            func.lower(func.trim(Category.name)) == normalized_name.lower(),
+            func.lower(func.trim(Category.budget_group)) == "otros",
+        ).first()
+        if existing:
+            if existing.sync_id != sync_id:
+                existing.sync_id = sync_id
+            return existing
+
         category = Category(
             sync_id=sync_id,
-            name=name or "Sin categoría",
+            name=normalized_name,
             budget_group="Otros",
         )
         session.add(category)
@@ -271,7 +330,7 @@ class MergerService:
         subcategory = SubCategory(
             sync_id=sync_id,
             category_id=category_id,
-            name=name or "Sin subcategoría",
+            name=name or "Sin subcategorÃ­a",
         )
         session.add(subcategory)
         session.flush()
@@ -410,17 +469,32 @@ class MergerService:
                 session.delete(existing)
             return
 
+        name = (payload.get("name") or "").strip()
+        budget_group = (payload.get("budget_group") or "Otros").strip() or "Otros"
+
         existing = session.query(Category).filter(Category.id == category_id).first()
         if not existing:
+            duplicate = None
+            if name:
+                duplicate = session.query(Category).filter(
+                    func.lower(func.trim(Category.name)) == name.lower(),
+                    func.lower(func.trim(Category.budget_group)) == budget_group.lower(),
+                ).first()
+            if duplicate:
+                if payload.get("sync_id") and not duplicate.sync_id:
+                    duplicate.sync_id = payload.get("sync_id")
+                return
+
             category = Category(
                 id=category_id,
-                name=payload.get("name"),
-                budget_group=payload.get("budget_group"),
+                name=name,
+                budget_group=budget_group,
+                sync_id=payload.get("sync_id"),
             )
             session.add(category)
             return
 
-        self._set_fields(existing, payload, ["name", "budget_group"])
+        self._set_fields(existing, payload, ["name", "budget_group", "sync_id"])
 
     def _merge_subcategory(self, session: Session, operation: str, payload: Dict[str, Any]) -> None:
         subcategory_id = payload.get("id")
@@ -548,3 +622,4 @@ class MergerService:
             if "deadline" in payload:
                 existing.deadline = self._parse_dt(payload["deadline"]) if payload["deadline"] else None
             existing.synced = True
+

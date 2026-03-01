@@ -3,6 +3,7 @@ SyncScheduler: Programación automática de sincronización con APScheduler
 """
 
 import logging
+import inspect
 from datetime import datetime, timezone
 from typing import Optional, Callable, Any, Dict
 from apscheduler.schedulers.background import BackgroundScheduler
@@ -29,14 +30,29 @@ class SyncScheduler:
 
     def __init__(
         self,
-        session_factory,
+        session_factory=None,
+        session=None,
         sync_interval_minutes: int = 15,
         retry_policy: Optional[RetryPolicy] = None,
         on_sync_start: Optional[Callable] = None,
         on_sync_complete: Optional[Callable] = None,
         on_sync_error: Optional[Callable] = None,
     ):
-        self.session_factory = session_factory
+        # Compatibilidad: aceptar session factory o Session directa en tests/legacy code.
+        if session is None and session_factory is not None and not callable(session_factory):
+            session = session_factory
+            session_factory = None
+
+        if session_factory is None and session is not None:
+            bound = getattr(session, "bind", None)
+            if bound is None:
+                raise ValueError("session debe tener engine asociado")
+            from sqlalchemy.orm import sessionmaker
+            self.session_factory = sessionmaker(bind=bound)
+        elif session_factory is not None:
+            self.session_factory = session_factory
+        else:
+            raise ValueError("session_factory o session son requeridos")
         self.sync_interval_minutes = sync_interval_minutes
         self.retry_policy = retry_policy or RetryPolicy()
         
@@ -134,11 +150,13 @@ class SyncScheduler:
                 
                 # Push: enviar cambios locales
                 import asyncio
-                pushed = asyncio.run(self.sync_protocol.push_outbox(limit=100))
+                push_result = self.sync_protocol.push_outbox(limit=100)
+                pushed = asyncio.run(push_result) if inspect.isawaitable(push_result) else push_result
                 logger.debug(f"Pushed {pushed} items")
                 
                 # Pull: recibir cambios remotos
-                pulled = asyncio.run(self.sync_protocol.pull_and_apply(page_size=50))
+                pull_result = self.sync_protocol.pull_and_apply(page_size=50)
+                pulled = asyncio.run(pull_result) if inspect.isawaitable(pull_result) else pull_result
                 logger.debug(f"Pulled {pulled} events")
                 
                 # Merging happens inside pull_events via MergerService
