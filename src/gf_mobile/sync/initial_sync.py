@@ -151,7 +151,7 @@ class InitialSyncService:
                     account.server_id = remote_id
                 self._merge_duplicate_accounts(session, account, remote_id)
 
-            self._prune_missing_accounts(session, local_user_id, seen_remote_ids)
+            self._dedupe_accounts_for_snapshot(session, seen_remote_ids)
             
             return count
         except Exception as e:
@@ -244,8 +244,6 @@ class InitialSyncService:
                     budget.amount = float(budget_data.get("amount", 0) or 0)
                     budget.synced = True
 
-            self._prune_missing_budgets(session, seen_budget_ids)
-            
             return count
         except Exception as e:
             raise SyncError(f"Error sincronizando presupuestos: {str(e)}")
@@ -328,8 +326,6 @@ class InitialSyncService:
                     if remote_doc_id:
                         existing.server_id = remote_doc_id
 
-            self._prune_missing_transactions(session, seen_tx_ids, seen_server_ids)
-            
             return count
         except Exception as e:
             raise SyncError(f"Error sincronizando transacciones: {str(e)}")
@@ -414,39 +410,26 @@ class InitialSyncService:
                 return transaction
         return None
 
-    def _prune_missing_accounts(
-        self,
-        session: Session,
-        local_user_id: int,
-        seen_remote_ids: set[str],
-    ) -> None:
-        if not seen_remote_ids:
-            return
-        for account in session.query(Account).filter(Account.user_id == local_user_id).all():
-            logical_id = self._string_id(account.server_id or account.id)
-            if account.synced and logical_id and logical_id not in seen_remote_ids:
-                session.delete(account)
-
-    def _prune_missing_budgets(self, session: Session, seen_budget_ids: set[str]) -> None:
-        if not seen_budget_ids:
-            return
-        for budget in session.query(Budget).all():
-            if budget.synced and str(budget.id) not in seen_budget_ids:
-                session.delete(budget)
-
-    def _prune_missing_transactions(
-        self,
-        session: Session,
-        seen_tx_ids: set[str],
-        seen_server_ids: set[str],
-    ) -> None:
-        if not seen_tx_ids and not seen_server_ids:
-            return
-        for transaction in session.query(Transaction).all():
-            matches_id = transaction.id in seen_tx_ids
-            matches_server_id = bool(transaction.server_id and transaction.server_id in seen_server_ids)
-            if transaction.synced and not matches_id and not matches_server_id:
-                session.delete(transaction)
+    def _dedupe_accounts_for_snapshot(self, session: Session, seen_remote_ids: set[str]) -> None:
+        for remote_id in seen_remote_ids:
+            accounts = session.query(Account).filter(
+                (Account.server_id == remote_id) | (Account.id == remote_id)
+            ).all()
+            if len(accounts) <= 1:
+                continue
+            primary = next((account for account in accounts if account.server_id == remote_id), accounts[0])
+            for duplicate in accounts:
+                if duplicate.id == primary.id:
+                    continue
+                session.query(Transaction).filter(Transaction.account_id == duplicate.id).update(
+                    {Transaction.account_id: primary.id},
+                    synchronize_session=False,
+                )
+                session.query(Transaction).filter(Transaction.to_account_id == duplicate.id).update(
+                    {Transaction.to_account_id: primary.id},
+                    synchronize_session=False,
+                )
+                session.delete(duplicate)
 
     def _resolve_local_user_id(self, session: Session) -> int:
         if self.user_id is not None:

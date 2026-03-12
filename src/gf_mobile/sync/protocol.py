@@ -13,7 +13,7 @@ from typing import Any, Dict, List, Optional, Tuple
 from sqlalchemy.orm import Session
 
 from gf_mobile.core.exceptions import SyncError
-from gf_mobile.persistence.models import SyncOutbox, SyncState, AppliedEvent
+from gf_mobile.persistence.models import Account, AppliedEvent, SyncOutbox, SyncState, Transaction
 from gf_mobile.sync.firestore_client import FirestoreClient
 from gf_mobile.sync.initial_sync import InitialSyncService
 from gf_mobile.sync.merger import MergerService
@@ -75,6 +75,7 @@ class SyncProtocol:
 
             for item in outbox_items:
                 payload = json.loads(item.payload)
+                payload = self._normalize_event_payload(payload)
                 try:
                     print(
                         f"[SYNC][M][PUSH] send event_id={item.id} "
@@ -159,6 +160,8 @@ class SyncProtocol:
             replay_once_key = "full_event_replay_once"
             should_replay_from_start = self._get_state(session, replay_once_key) != "true"
             effective_since = None if should_replay_from_start else last_applied_at
+            if should_replay_from_start and self._has_snapshot_seeded_data(session):
+                effective_since = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
             events, _ = await self.firestore_client.fetch_events_since(
                 user_uid=self.user_uid,
                 since_timestamp=effective_since,
@@ -196,6 +199,21 @@ class SyncProtocol:
             raise SyncError(f"Error en pull_and_apply: {str(e)}")
         finally:
             session.close()
+
+    def _has_snapshot_seeded_data(self, session: Session) -> bool:
+        has_account = session.query(Account.id).first() is not None
+        has_transaction = session.query(Transaction.id).first() is not None
+        return has_account and has_transaction
+
+    def _normalize_event_payload(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+        normalized = dict(payload)
+        amount = normalized.get("amount")
+        if isinstance(amount, str):
+            try:
+                normalized["amount"] = float(amount)
+            except ValueError:
+                pass
+        return normalized
 
     async def refresh_base_snapshot(self) -> Dict[str, int]:
         """
