@@ -6,6 +6,8 @@ from kivy.lang import Builder
 from kivy.properties import BooleanProperty, StringProperty
 from kivy.uix.screenmanager import Screen
 
+from gf_mobile.ui.widgets.shell import HeroCard, ScreenHeader, SectionCard
+
 
 Builder.load_string(
     """
@@ -14,28 +16,33 @@ Builder.load_string(
 
     MDBoxLayout:
         orientation: "vertical"
-        padding: "24dp"
-        spacing: "16dp"
+        padding: "20dp"
+        spacing: "14dp"
+        md_bg_color: app.kivy_palette["background"]
 
         Widget:
-            size_hint_y: 0.1
+            size_hint_y: 0.05
 
-        MDLabel:
-            text: "GestionFondos"
-            halign: "left"
-            font_style: "H4"
-            bold: True
+        ScreenHeader:
+            eyebrow: "BIENVENIDA"
+            title: "GestionFondos"
+            subtitle: "La experiencia movil ya usa la nueva shell visual"
+            muted_color: app.kivy_palette["text_secondary"]
 
-        
+        HeroCard:
+            eyebrow: "Acceso seguro"
+            title: "Entra para activar sync y datos locales"
+            supporting_text: "Usa email o Google. La sesion local se reutiliza cuando el token sigue siendo valido."
+            card_color: app.kivy_palette["primary"]
+            title_color: 1, 1, 1, 1
+            eyebrow_color: 1, 1, 1, 0.82
 
-        MDCard:
-            orientation: "vertical"
-            padding: "16dp"
-            spacing: "12dp"
-            radius: [16, 16, 16, 16]
-            size_hint_y: None
-            height: self.minimum_height
-            adaptive_height: True
+        SectionCard:
+            title: "Iniciar sesion"
+            subtitle: "Credenciales del mismo proyecto Firebase"
+            card_color: app.kivy_palette["surface"]
+            title_color: app.kivy_palette["text_primary"]
+            muted_color: app.kivy_palette["text_secondary"]
 
             MDTextField:
                 id: email
@@ -56,6 +63,7 @@ Builder.load_string(
                 text: "Entrar"
                 size_hint_y: None
                 height: "46dp"
+                md_bg_color: app.kivy_palette["primary"]
                 on_release: root.on_login()
 
             MDFlatButton:
@@ -67,7 +75,7 @@ Builder.load_string(
             text: root.status_message
             halign: "center"
             theme_text_color: "Custom"
-            text_color: app.kivy_palette["error"]
+            text_color: app.kivy_palette[root.status_color_name]
             text_size: self.width, None
             height: self.texture_size[1]
             size_hint_y: None
@@ -85,6 +93,7 @@ class LoginScreen(Screen):
     email = StringProperty("")
     password = StringProperty("")
     status_message = StringProperty("")
+    status_color_name = StringProperty("error")
     google_login_available = BooleanProperty(True)
 
     def __init__(self, auth_service=None, **kwargs):
@@ -94,8 +103,10 @@ class LoginScreen(Screen):
     def on_login(self) -> None:
         if not self.auth_service:
             self.status_message = "AuthService no configurado"
+            self.status_color_name = "error"
             return
         self.status_message = "Iniciando sesion..."
+        self.status_color_name = "text_secondary"
         try:
             import asyncio
 
@@ -111,14 +122,18 @@ class LoginScreen(Screen):
             if app:
                 app.on_login_success(tokens.user_id, just_logged_in=True)
             self.status_message = "Sesion iniciada"
+            self.status_color_name = "success"
         except Exception as exc:  # noqa: BLE001
             self.status_message = f"Error: {exc}"
+            self.status_color_name = "error"
 
     def on_google_login(self) -> None:
         if not self.auth_service:
             self.status_message = "AuthService no configurado"
+            self.status_color_name = "error"
             return
         self.status_message = "Abriendo navegador para Google..."
+        self.status_color_name = "text_secondary"
         try:
             import asyncio
 
@@ -135,8 +150,11 @@ class LoginScreen(Screen):
             if app:
                 app.on_login_success(tokens.user_id, just_logged_in=True)
             self.status_message = "Sesion iniciada con Google"
+            self.status_color_name = "success"
         except Exception as exc:  # noqa: BLE001
             self.status_message = f"Error: {exc}"
+            self.status_color_name = "error"
 
     def set_status(self, message: str) -> None:
         self.status_message = message
+        self.status_color_name = "text_secondary"

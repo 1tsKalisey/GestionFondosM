@@ -71,6 +71,9 @@ class FirestoreClient:
     def _sync_state_doc_path(self, user_uid: str, device_id: str) -> str:
         return f"{self._base_url}/users/{user_uid}/syncState/{device_id}"
 
+    def _collection_doc_path(self, user_uid: str, collection: str, doc_id: Any) -> str:
+        return f"{self._base_url}/users/{user_uid}/{collection}/{doc_id}"
+
     async def create_event(
         self,
         user_uid: str,
@@ -189,6 +192,39 @@ class FirestoreClient:
         sync_body = {"fields": sync_fields}
         sync_url = self._sync_state_doc_path(user_uid, device_id)
         await self._request("PATCH", sync_url, json_body=sync_body)
+
+    async def upsert_account(self, user_uid: str, account_id: Any, account_data: Dict[str, Any]) -> None:
+        await self._upsert_document(user_uid, "accounts", account_id, account_data)
+
+    async def upsert_category(self, user_uid: str, category_id: Any, category_data: Dict[str, Any]) -> None:
+        await self._upsert_document(user_uid, "categories", category_id, category_data)
+
+    async def upsert_budget(self, user_uid: str, budget_id: Any, budget_data: Dict[str, Any]) -> None:
+        await self._upsert_document(user_uid, "budgets", budget_id, budget_data)
+
+    async def upsert_transaction(
+        self,
+        user_uid: str,
+        transaction_id: Any,
+        transaction_data: Dict[str, Any],
+    ) -> None:
+        await self._upsert_document(user_uid, "transactions", transaction_id, transaction_data)
+
+    async def _upsert_document(
+        self,
+        user_uid: str,
+        collection: str,
+        doc_id: Any,
+        payload: Dict[str, Any],
+    ) -> None:
+        fields = {
+            key: self._to_firestore_value(value)
+            for key, value in payload.items()
+            if value is not None
+        }
+        body = {"fields": fields}
+        url = self._collection_doc_path(user_uid, collection, doc_id)
+        await self._request("PATCH", url, json_body=body)
 
     def _from_firestore_document(self, doc: Dict[str, Any]) -> Dict[str, Any]:
         fields = doc.get("fields", {})

@@ -17,6 +17,8 @@ from kivymd.uix.card import MDCard
 from kivymd.uix.label import MDLabel
 
 from gf_mobile.core.transaction_types import normalize_transaction_type
+from gf_mobile.ui.screen_utils import apply_palette_attrs, resolve_palette
+from gf_mobile.ui.widgets.shell import EmptyStateCard, HeroCard, ScreenHeader
 
 Builder.load_string(
     """
@@ -25,32 +27,38 @@ Builder.load_string(
 
     MDBoxLayout:
         orientation: "vertical"
-        padding: "12dp"
-        spacing: "8dp"
+        padding: "16dp"
+        spacing: "12dp"
         md_bg_color: root.page_bg_color
 
-        MDBoxLayout:
-            size_hint_y: None
-            height: "44dp"
-            spacing: "8dp"
+        ScreenHeader:
+            eyebrow: "RESULTADOS"
+            title: "Movimientos"
+            subtitle: root.filters_summary
+            muted_color: app.kivy_palette["text_secondary"]
 
-            MDFlatButton:
-                text: "Filtros"
-                size_hint_x: None
-                width: "84dp"
-                on_release: root.manager.current = "transactions"
+        HeroCard:
+            eyebrow: "Consulta activa"
+            title: root.results_headline
+            supporting_text: root.status_message or "Refina los filtros o crea una nueva transaccion."
+            card_color: root.accent_color
+            title_color: 1, 1, 1, 1
+            eyebrow_color: 1, 1, 1, 0.82
 
-            MDLabel:
-                text: "Movimientos"
-                font_style: "H6"
-                bold: True
+            MDBoxLayout:
+                adaptive_height: True
+                spacing: "10dp"
 
-            MDRaisedButton:
-                text: "+ Nuevo"
-                size_hint_x: None
-                width: "96dp"
-                md_bg_color: root.accent_color
-                on_release: root.manager.current = "add_transaction"
+                MDFlatButton:
+                    text: "Filtros"
+                    theme_text_color: "Custom"
+                    text_color: 1, 1, 1, 1
+                    on_release: root.manager.current = "transactions"
+
+                MDRaisedButton:
+                    text: "+ Nuevo"
+                    md_bg_color: app.kivy_palette["primary"]
+                    on_release: root.manager.current = "add_transaction"
 
         ScrollView:
             MDBoxLayout:
@@ -78,6 +86,8 @@ Builder.load_string(
 class TransactionsResultsScreen(Screen):
     status_message = StringProperty("")
     active_filters = DictProperty({})
+    filters_summary = StringProperty("Sin filtros")
+    results_headline = StringProperty("0 movimientos")
     page_bg_color = ListProperty([0, 0, 0, 0])
     accent_color = ListProperty([0, 0, 0, 0])
     card_even_bg = ListProperty([0, 0, 0, 0])
@@ -95,6 +105,7 @@ class TransactionsResultsScreen(Screen):
 
     def set_filters(self, filters: Dict[str, Any]) -> None:
         self.active_filters = dict(filters or {})
+        self.filters_summary = self._build_filters_summary()
 
     def refresh(self) -> None:
         self.ids.results_container.clear_widgets()
@@ -111,24 +122,16 @@ class TransactionsResultsScreen(Screen):
             for idx, tx in enumerate(filtered_txs):
                 self.ids.results_container.add_widget(self._build_transaction_card(tx, idx))
             self.status_message = f"{len(filtered_txs)} movimientos"
+            self.results_headline = self.status_message
         except Exception as exc:
             self.status_message = self._short_error(exc)
+            self.results_headline = "Consulta no disponible"
 
     def _build_empty_card(self) -> MDCard:
-        card = MDCard(
-            orientation="vertical",
-            size_hint_y=None,
-            height=dp(76),
-            padding=dp(12),
-            radius=[14, 14, 14, 14],
-            md_bg_color=self.empty_bg,
-        )
-        card.add_widget(
-            MDLabel(
-                text="No hay movimientos con esos filtros",
-                theme_text_color="Secondary",
-                halign="center",
-            )
+        card = EmptyStateCard(
+            title="No hay movimientos",
+            message="Prueba otro rango, otro tipo o elimina filtros.",
+            card_color=self.empty_bg,
         )
         return card
 
@@ -136,15 +139,11 @@ class TransactionsResultsScreen(Screen):
         category_name = tx.category.name if hasattr(tx, "category") and tx.category else "Sin categoria"
         tx_type = normalize_transaction_type(tx.type)
         amount = float(tx.amount) if tx.amount is not None else 0.0
-        app = App.get_running_app()
-        palette = getattr(app, "kivy_palette", None) if app else None
+        palette = resolve_palette()
         if palette:
             amount_color = palette["success"] if tx_type == "ingreso" else palette["error"]
         else:
-            from gf_mobile.ui.theme import get_kivy_palette
-
-            fallback = get_kivy_palette()
-            amount_color = fallback["success"] if tx_type == "ingreso" else fallback["error"]
+            amount_color = [0, 0.6, 0.3, 1] if tx_type == "ingreso" else [0.8, 0.2, 0.2, 1]
         badge_text = "INGRESO" if tx_type == "ingreso" else "GASTO" if tx_type == "gasto" else "MOV"
         date_text = tx.occurred_at.strftime("%d/%m/%Y")
 
@@ -266,6 +265,22 @@ class TransactionsResultsScreen(Screen):
 
         return result
 
+    def _build_filters_summary(self) -> str:
+        parts: list[str] = []
+        if self.active_filters.get("type"):
+            parts.append(str(self.active_filters["type"]))
+        if self.active_filters.get("categories"):
+            parts.append(f"{len(self.active_filters['categories'])} categorias")
+        if self.active_filters.get("date_from") or self.active_filters.get("date_to"):
+            start = self.active_filters.get("date_from") or "..."
+            end = self.active_filters.get("date_to") or "..."
+            parts.append(f"{start} -> {end}")
+        if self.active_filters.get("amount_min") is not None or self.active_filters.get("amount_max") is not None:
+            min_amount = self.active_filters.get("amount_min")
+            max_amount = self.active_filters.get("amount_max")
+            parts.append(f"EUR {min_amount if min_amount is not None else 0} - {max_amount if max_amount is not None else '...'}")
+        return " | ".join(parts) if parts else "Sin filtros"
+
     @staticmethod
     def _short_error(exc: Exception) -> str:
         message = str(exc).replace("\n", " ").strip()
@@ -274,20 +289,13 @@ class TransactionsResultsScreen(Screen):
         return f"Error: {message}"
 
     def _apply_theme_colors(self) -> None:
-        app = App.get_running_app()
-        palette = getattr(app, "kivy_palette", None) if app else None
-        if palette:
-            self.accent_color = palette["primary"]
-            self.page_bg_color = palette["background"]
-            self.card_even_bg = palette["surface"]
-            self.card_odd_bg = palette["background"]
-            self.empty_bg = palette["surface"]
-        else:
-            from gf_mobile.ui.theme import get_kivy_palette
-
-            fallback = get_kivy_palette()
-            self.accent_color = fallback["primary"]
-            self.page_bg_color = fallback["background"]
-            self.card_even_bg = fallback["surface"]
-            self.card_odd_bg = fallback["background"]
-            self.empty_bg = fallback["surface"]
+        apply_palette_attrs(
+            self,
+            {
+                "accent_color": "primary",
+                "page_bg_color": "background",
+                "card_even_bg": "surface",
+                "card_odd_bg": "background",
+                "empty_bg": "surface",
+            },
+        )

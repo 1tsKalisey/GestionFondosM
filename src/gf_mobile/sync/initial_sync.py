@@ -15,7 +15,7 @@ from sqlalchemy.orm import Session
 
 from gf_mobile.core.exceptions import SyncError
 from gf_mobile.core.transaction_types import normalize_transaction_type
-from gf_mobile.persistence.models import Account, Category, Budget, Transaction, SyncState
+from gf_mobile.persistence.models import Account, Category, Budget, Transaction, SyncState, User
 from gf_mobile.sync.firestore_client import FirestoreClient
 
 
@@ -35,7 +35,7 @@ class InitialSyncService:
         session_factory,
         firestore_client: FirestoreClient,
         user_uid: str,
-        user_id: int,
+        user_id: Optional[int] = None,
     ):
         self.session_factory = session_factory
         self.firestore_client = firestore_client
@@ -74,8 +74,11 @@ class InitialSyncService:
             session.close()
 
     async def perform_initial_sync(self) -> Dict[str, int]:
+        return await self.perform_snapshot_sync(mark_completed=True)
+
+    async def perform_snapshot_sync(self, *, mark_completed: bool = False) -> Dict[str, int]:
         """
-        Realiza la sincronizaciÃ³n inicial de todos los datos base.
+        Realiza una sincronizaciÃ³n de snapshot de todos los datos base.
         
         Returns:
             Dict con contadores de datos importados
@@ -101,8 +104,8 @@ class InitialSyncService:
             # 4. Descargar y aplicar transacciones
             imported["transactions"] = await self._sync_transactions(session)
             
-            # Marcar como completada
-            self._mark_initial_sync_completed(session)
+            if mark_completed:
+                self._mark_initial_sync_completed(session)
             
             session.commit()
             return imported
@@ -116,27 +119,39 @@ class InitialSyncService:
     async def _sync_accounts(self, session: Session) -> int:
         """Descarga y aplica todas las cuentas."""
         try:
+            local_user_id = self._resolve_local_user_id(session)
             accounts_data = await self.firestore_client.get_all_accounts(
                 user_uid=self.user_uid
             )
             
             count = 0
+            seen_remote_ids: set[str] = set()
             for account_data in accounts_data:
-                account_id = account_data.get("id")
-                if session.query(Account).filter(Account.id == account_id).first():
-                    continue  # Ya existe
-                
-                account = Account(
-                    id=account_data.get("id"),
-                    user_id=self.user_id,
-                    name=account_data.get("name"),
-                    type=account_data.get("type"),
-                    currency=account_data.get("currency", "EUR"),
-                    opening_balance=float(account_data.get("opening_balance", 0)),
-                    synced=True,
-                )
-                session.add(account)
-                count += 1
+                remote_id = self._string_id(account_data.get("sync_id") or account_data.get("id"))
+                if not remote_id:
+                    continue
+                seen_remote_ids.add(remote_id)
+
+                account = self._find_local_account(session, remote_id)
+                if not account:
+                    account = Account(
+                        user_id=local_user_id,
+                        server_id=remote_id,
+                        synced=True,
+                    )
+                    session.add(account)
+                    count += 1
+
+                account.name = account_data.get("name") or account.name or "Cuenta"
+                account.type = account_data.get("type") or account.type or "efectivo"
+                account.currency = account_data.get("currency", "EUR") or account.currency or "EUR"
+                account.opening_balance = float(account_data.get("opening_balance", 0) or 0)
+                account.synced = True
+                if not account.server_id:
+                    account.server_id = remote_id
+                self._merge_duplicate_accounts(session, account, remote_id)
+
+            self._prune_missing_accounts(session, local_user_id, seen_remote_ids)
             
             return count
         except Exception as e:
@@ -170,6 +185,8 @@ class InitialSyncService:
                     # Si ya existia por nombre+grupo, completar sync_id para mapear bien.
                     if remote_sync_id and not existing.sync_id:
                         existing.sync_id = remote_sync_id
+                    existing.name = name
+                    existing.budget_group = budget_group
                     continue
 
                 category = Category(
@@ -192,26 +209,42 @@ class InitialSyncService:
             )
             
             count = 0
+            seen_budget_ids: set[str] = set()
             for budget_data in budgets_data:
                 budget_id = budget_data.get("id")
-                if session.query(Budget).filter(Budget.id == budget_id).first():
-                    continue  # Ya existe
+                if budget_id:
+                    seen_budget_ids.add(str(budget_id))
                 local_category_id = self._resolve_local_category_id(
                     session, budget_data.get("category_id")
                 )
                 if local_category_id is None:
                     # Presupuesto invÃ¡lido sin categorÃ­a local mapeable.
                     continue
-                
-                budget = Budget(
-                    id=budget_id,
-                    category_id=local_category_id,
-                    month=budget_data.get("month"),
-                    amount=float(budget_data.get("amount", 0)),
-                    synced=True,
-                )
-                session.add(budget)
-                count += 1
+
+                budget = session.query(Budget).filter(Budget.id == budget_id).first() if budget_id else None
+                if not budget:
+                    budget = session.query(Budget).filter(
+                        Budget.category_id == local_category_id,
+                        Budget.month == budget_data.get("month"),
+                    ).first()
+
+                if not budget:
+                    budget = Budget(
+                        id=budget_id,
+                        category_id=local_category_id,
+                        month=budget_data.get("month"),
+                        amount=float(budget_data.get("amount", 0)),
+                        synced=True,
+                    )
+                    session.add(budget)
+                    count += 1
+                else:
+                    budget.category_id = local_category_id
+                    budget.month = budget_data.get("month")
+                    budget.amount = float(budget_data.get("amount", 0) or 0)
+                    budget.synced = True
+
+            self._prune_missing_budgets(session, seen_budget_ids)
             
             return count
         except Exception as e:
@@ -225,30 +258,77 @@ class InitialSyncService:
             )
             
             count = 0
+            seen_tx_ids: set[str] = set()
+            seen_server_ids: set[str] = set()
             for tx_data in transactions_data:
-                tx_id = tx_data.get("id")
-                if session.query(Transaction).filter(Transaction.id == tx_id).first():
-                    continue  # Ya existe
+                remote_doc_id = self._string_id(tx_data.get("id"))
+                remote_sync_id = self._string_id(
+                    tx_data.get("sync_id") or tx_data.get("transaction_id")
+                )
+                local_tx_id = remote_sync_id or remote_doc_id
+                if not local_tx_id:
+                    continue
+                seen_tx_ids.add(local_tx_id)
+                if remote_doc_id:
+                    seen_server_ids.add(remote_doc_id)
+
+                existing = self._find_local_transaction(
+                    session,
+                    local_tx_id=local_tx_id,
+                    remote_doc_id=remote_doc_id,
+                )
                 local_category_id = self._resolve_local_category_id(
                     session, tx_data.get("category_id")
                 )
+                local_account_id = self._resolve_local_account_id(
+                    session, tx_data.get("account_id")
+                )
+                local_to_account_id = self._resolve_local_account_id(
+                    session, tx_data.get("to_account_id")
+                )
                 if local_category_id is None:
                     continue
-                
-                transaction = Transaction(
-                    id=tx_id,
-                    account_id=tx_data.get("account_id"),
-                    category_id=local_category_id,
-                    type=normalize_transaction_type(tx_data.get("type")),
-                    amount=float(tx_data.get("amount", 0)),
-                    currency=tx_data.get("currency", "EUR"),
-                    occurred_at=datetime.fromisoformat(tx_data.get("occurred_at")),
-                    merchant=tx_data.get("merchant"),
-                    note=tx_data.get("note"),
-                    synced=True,
-                )
-                session.add(transaction)
-                count += 1
+                if local_account_id is None:
+                    continue
+
+                occurred_at = self._parse_remote_datetime(tx_data.get("occurred_at"))
+                if occurred_at is None:
+                    continue
+
+                if not existing:
+                    transaction = Transaction(
+                        id=local_tx_id,
+                        account_id=local_account_id,
+                        to_account_id=local_to_account_id,
+                        category_id=local_category_id,
+                        type=normalize_transaction_type(tx_data.get("type")),
+                        amount=float(tx_data.get("amount", 0) or 0),
+                        currency=tx_data.get("currency", "EUR"),
+                        occurred_at=occurred_at,
+                        merchant=tx_data.get("merchant"),
+                        note=tx_data.get("note"),
+                        synced=True,
+                        server_id=remote_doc_id or None,
+                    )
+                    session.add(transaction)
+                    count += 1
+                else:
+                    if existing.id != local_tx_id and remote_sync_id:
+                        existing.id = local_tx_id
+                    existing.account_id = local_account_id
+                    existing.to_account_id = local_to_account_id
+                    existing.category_id = local_category_id
+                    existing.type = normalize_transaction_type(tx_data.get("type"))
+                    existing.amount = float(tx_data.get("amount", 0) or 0)
+                    existing.currency = tx_data.get("currency", "EUR")
+                    existing.occurred_at = occurred_at
+                    existing.merchant = tx_data.get("merchant")
+                    existing.note = tx_data.get("note")
+                    existing.synced = True
+                    if remote_doc_id:
+                        existing.server_id = remote_doc_id
+
+            self._prune_missing_transactions(session, seen_tx_ids, seen_server_ids)
             
             return count
         except Exception as e:
@@ -278,6 +358,124 @@ class InitialSyncService:
                 return cat.id
 
         return None
+
+    def _resolve_local_account_id(
+        self, session: Session, remote_account_id: Optional[Any]
+    ) -> Optional[str]:
+        remote_value = self._string_id(remote_account_id)
+        if not remote_value:
+            return None
+
+        account = self._find_local_account(session, remote_value)
+        return account.id if account else None
+
+    def _find_local_account(self, session: Session, remote_id: str) -> Optional[Account]:
+        account = session.query(Account).filter(Account.server_id == remote_id).first()
+        if account:
+            return account
+        return session.query(Account).filter(Account.id == remote_id).first()
+
+    def _merge_duplicate_accounts(
+        self,
+        session: Session,
+        primary_account: Account,
+        remote_id: str,
+    ) -> None:
+        duplicates = session.query(Account).filter(
+            ((Account.server_id == remote_id) | (Account.id == remote_id)),
+            Account.id != primary_account.id,
+        ).all()
+        for duplicate in duplicates:
+            session.query(Transaction).filter(Transaction.account_id == duplicate.id).update(
+                {Transaction.account_id: primary_account.id},
+                synchronize_session=False,
+            )
+            session.query(Transaction).filter(Transaction.to_account_id == duplicate.id).update(
+                {Transaction.to_account_id: primary_account.id},
+                synchronize_session=False,
+            )
+            session.delete(duplicate)
+
+    def _find_local_transaction(
+        self,
+        session: Session,
+        *,
+        local_tx_id: str,
+        remote_doc_id: str,
+    ) -> Optional[Transaction]:
+        transaction = session.query(Transaction).filter(Transaction.id == local_tx_id).first()
+        if transaction:
+            return transaction
+        if remote_doc_id:
+            transaction = session.query(Transaction).filter(
+                Transaction.server_id == remote_doc_id
+            ).first()
+            if transaction:
+                return transaction
+        return None
+
+    def _prune_missing_accounts(
+        self,
+        session: Session,
+        local_user_id: int,
+        seen_remote_ids: set[str],
+    ) -> None:
+        if not seen_remote_ids:
+            return
+        for account in session.query(Account).filter(Account.user_id == local_user_id).all():
+            logical_id = self._string_id(account.server_id or account.id)
+            if account.synced and logical_id and logical_id not in seen_remote_ids:
+                session.delete(account)
+
+    def _prune_missing_budgets(self, session: Session, seen_budget_ids: set[str]) -> None:
+        if not seen_budget_ids:
+            return
+        for budget in session.query(Budget).all():
+            if budget.synced and str(budget.id) not in seen_budget_ids:
+                session.delete(budget)
+
+    def _prune_missing_transactions(
+        self,
+        session: Session,
+        seen_tx_ids: set[str],
+        seen_server_ids: set[str],
+    ) -> None:
+        if not seen_tx_ids and not seen_server_ids:
+            return
+        for transaction in session.query(Transaction).all():
+            matches_id = transaction.id in seen_tx_ids
+            matches_server_id = bool(transaction.server_id and transaction.server_id in seen_server_ids)
+            if transaction.synced and not matches_id and not matches_server_id:
+                session.delete(transaction)
+
+    def _resolve_local_user_id(self, session: Session) -> int:
+        if self.user_id is not None:
+            return self.user_id
+
+        user = None
+        if self.user_uid:
+            user = session.query(User).filter(User.server_uid == self.user_uid).first()
+        if not user:
+            user = session.query(User).first()
+        if not user:
+            raise SyncError("No hay usuario local para importar snapshot remoto")
+        self.user_id = user.id
+        return user.id
+
+    @staticmethod
+    def _parse_remote_datetime(value: Optional[str]) -> Optional[datetime]:
+        if not value:
+            return None
+        try:
+            return datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+        except Exception:
+            return None
+
+    @staticmethod
+    def _string_id(value: Optional[Any]) -> str:
+        if value is None:
+            return ""
+        return str(value).strip()
 
     def _mark_initial_sync_completed(self, session: Session) -> None:
         """Marca la sincronizacion inicial como completada para el usuario actual."""

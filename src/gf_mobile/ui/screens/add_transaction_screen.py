@@ -2,17 +2,20 @@
 Add transaction screen.
 """
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Dict, Optional
 
 from kivy.app import App
 from kivy.lang import Builder
 from kivy.properties import StringProperty
 from kivy.uix.screenmanager import Screen
-from kivy.uix.spinner import Spinner
 from kivymd.uix.button import MDFlatButton, MDRaisedButton
 from kivymd.uix.dialog import MDDialog
 from kivymd.uix.textfield import MDTextField
+
+from gf_mobile.ui.dialogs import build_message_dialog, build_selection_dialog
+from gf_mobile.ui.screen_utils import resolve_palette
+from gf_mobile.ui.widgets.shell import HeroCard, ScreenHeader, SectionCard
 
 
 Builder.load_string(
@@ -22,32 +25,36 @@ Builder.load_string(
 
     MDBoxLayout:
         orientation: "vertical"
-        padding: "12dp"
-        spacing: "8dp"
+        padding: "16dp"
+        spacing: "12dp"
+        md_bg_color: app.kivy_palette["background"]
 
-        MDBoxLayout:
-            size_hint_y: None
-            height: "48dp"
+        ScreenHeader:
+            eyebrow: "CAPTURA"
+            title: root.title
+            subtitle: "Alta rapida de ingresos, gastos y transferencias"
+            muted_color: app.kivy_palette["text_secondary"]
 
-            MDLabel:
-                text: root.title
-                font_style: "H6"
-                bold: True
-                text_size: self.width, None
-                shorten: True
-                shorten_from: "right"
+        HeroCard:
+            eyebrow: "Flujo corto"
+            title: root.type_display.capitalize()
+            supporting_text: root.status_message or "Completa importe, tipo, categoria y cuenta."
+            card_color: app.kivy_palette["primary"]
+            title_color: 1, 1, 1, 1
+            eyebrow_color: 1, 1, 1, 0.82
 
             MDFlatButton:
                 text: "Volver"
-                size_hint_x: None
-                width: "80dp"
+                theme_text_color: "Custom"
+                text_color: 1, 1, 1, 1
                 on_release: root.manager.current = 'transactions'
 
-        MDCard:
-            orientation: "vertical"
-            size_hint_y: 1
-            padding: "12dp"
-            spacing: "10dp"
+        SectionCard:
+            title: "Datos del movimiento"
+            subtitle: "Formulario operativo"
+            card_color: app.kivy_palette["surface"]
+            title_color: app.kivy_palette["text_primary"]
+            muted_color: app.kivy_palette["text_secondary"]
 
             MDTextField:
                 id: amount
@@ -66,16 +73,12 @@ Builder.load_string(
                     width: "72dp"
                     theme_text_color: "Hint"
 
-                Spinner:
-                    id: type_spinner
+                MDRaisedButton:
+                    id: type_button
                     text: root.type_display
-                    values: ("gasto", "ingreso", "transferencia")
-                    size_hint_y: None
-                    height: "40dp"
-                    background_normal: ""
-                    background_color: app.kivy_palette["primary"]
-                    color: (1, 1, 1, 1)
-                    on_text: root.on_type_selected(self.text)
+                    size_hint_x: 1
+                    md_bg_color: app.kivy_palette["primary"]
+                    on_release: root.open_type_picker()
 
             MDBoxLayout:
                 size_hint_y: None
@@ -88,16 +91,12 @@ Builder.load_string(
                     width: "72dp"
                     theme_text_color: "Hint"
 
-                Spinner:
-                    id: category_spinner
+                MDRaisedButton:
+                    id: category_button
                     text: root.category_display
-                    values: ()
-                    size_hint_y: None
-                    height: "40dp"
-                    background_normal: ""
-                    background_color: app.kivy_palette["primary"]
-                    color: (1, 1, 1, 1)
-                    on_text: root.on_category_selected(self.text)
+                    size_hint_x: 1
+                    md_bg_color: app.kivy_palette["primary"]
+                    on_release: root.open_category_picker()
 
             MDBoxLayout:
                 size_hint_y: None
@@ -110,23 +109,17 @@ Builder.load_string(
                     width: "72dp"
                     theme_text_color: "Hint"
 
-                Spinner:
-                    id: account_spinner
+                MDRaisedButton:
+                    id: account_button
                     text: root.account_display
-                    values: ()
-                    size_hint_y: None
-                    height: "40dp"
-                    background_normal: ""
-                    background_color: app.kivy_palette["primary"]
-                    color: (1, 1, 1, 1)
-                    on_text: root.on_account_selected(self.text)
+                    size_hint_x: 1
+                    md_bg_color: app.kivy_palette["primary"]
+                    on_release: root.open_account_picker()
 
             MDTextField:
                 id: note
                 hint_text: "Nota"
                 mode: "rectangle"
-
-            Widget:
 
             MDRaisedButton:
                 text: "Guardar"
@@ -170,29 +163,46 @@ class AddTransactionScreen(Screen):
 
         self.category_id_by_name = {c.name: c.id for c in categories}
         self.account_id_by_name = {a.name: a.id for a in accounts}
-        self.ids.category_spinner.values = tuple(self.category_id_by_name.keys())
-        self.ids.account_spinner.values = tuple(self.account_id_by_name.keys())
 
         if categories and self.selected_category_id is None:
             self.selected_category_id = categories[0].id
             self.category_display = categories[0].name
-            self.ids.category_spinner.text = self.category_display
         if accounts and self.selected_account_id is None:
             self.selected_account_id = accounts[0].id
             self.account_display = accounts[0].name
-            self.ids.account_spinner.text = self.account_display
 
     def on_type_selected(self, value: str) -> None:
         self.selected_type = value
         self.type_display = value
 
+    def open_type_picker(self) -> None:
+        self._open_selection_dialog(
+            "Tipo de movimiento",
+            ["gasto", "ingreso", "transferencia"],
+            self.on_type_selected,
+        )
+
     def on_category_selected(self, name: str) -> None:
         self.category_display = name
         self.selected_category_id = self.category_id_by_name.get(name)
 
+    def open_category_picker(self) -> None:
+        self._open_selection_dialog(
+            "Categoria",
+            list(self.category_id_by_name.keys()),
+            self.on_category_selected,
+        )
+
     def on_account_selected(self, name: str) -> None:
         self.account_display = name
         self.selected_account_id = self.account_id_by_name.get(name)
+
+    def open_account_picker(self) -> None:
+        self._open_selection_dialog(
+            "Cuenta",
+            list(self.account_id_by_name.keys()),
+            self.on_account_selected,
+        )
 
     def on_save(self) -> None:
         if not self.transaction_service:
@@ -202,6 +212,8 @@ class AddTransactionScreen(Screen):
 
         try:
             amount = float(self.ids.amount.text)
+            if amount <= 0:
+                raise ValueError("El monto debe ser positivo")
             session = self.transaction_service.session
 
             category_id = self.selected_category_id
@@ -230,11 +242,12 @@ class AddTransactionScreen(Screen):
                 amount=amount,
                 category_id=category_id,
                 note=note,
-                occurred_at=datetime.utcnow(),
+                occurred_at=datetime.now(timezone.utc),
             )
             self._trigger_background_sync()
             self.ids.amount.text = ""
             self.ids.note.text = ""
+            self.status_message = "Transaccion guardada correctamente"
             self._show_popup("Exito", "Transaccion guardada correctamente")
         except Exception as exc:
             self.status_message = f"Error: {exc}"
@@ -263,26 +276,21 @@ class AddTransactionScreen(Screen):
         threading.Thread(target=_worker, daemon=True).start()
 
     def _show_popup(self, title: str, message: str) -> None:
-        if self._dialog:
-            self._dialog.dismiss()
-        app = App.get_running_app()
-        palette = getattr(app, "kivy_palette", None) if app else None
-        if palette:
-            button_color = palette["primary"] if title == "Exito" else palette["error"]
-        else:
-            from gf_mobile.ui.theme import get_kivy_palette
-
-            fallback = get_kivy_palette()
-            button_color = fallback["primary"] if title == "Exito" else fallback["error"]
-        self._dialog = MDDialog(
+        palette = resolve_palette()
+        button_color = palette["primary"] if title == "Exito" else palette["error"]
+        self._dialog = build_message_dialog(
+            self._dialog,
             title=title,
-            text=message,
-            buttons=[
-                MDRaisedButton(
-                    text="Aceptar",
-                    md_bg_color=button_color,
-                    on_release=lambda *_: self._dialog.dismiss(),
-                )
-            ],
+            message=message,
+            button_color=button_color,
+        )
+        self._dialog.open()
+
+    def _open_selection_dialog(self, title: str, options, callback) -> None:
+        self._dialog = build_selection_dialog(
+            self._dialog,
+            title=title,
+            options=options,
+            on_select=callback,
         )
         self._dialog.open()

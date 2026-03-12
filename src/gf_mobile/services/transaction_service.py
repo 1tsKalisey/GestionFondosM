@@ -21,6 +21,7 @@ from sqlalchemy import and_, or_, desc, func
 from sqlalchemy.orm import Session
 
 from gf_mobile.core.exceptions import ValidationError, DatabaseError
+from gf_mobile.core.transaction_types import normalize_transaction_type
 from gf_mobile.persistence.models import (
     Transaction,
     Account,
@@ -97,7 +98,7 @@ class TransactionService:
 
             # Valores por defecto
             if occurred_at is None:
-                occurred_at = datetime.utcnow()
+                occurred_at = datetime.now(timezone.utc)
 
             # Crear transacción
             transaction = Transaction(
@@ -308,8 +309,43 @@ class TransactionService:
     def count_by_account(self, account_id: str) -> int:
         """Cuenta transacciones por cuenta."""
         return self.session.query(func.count(Transaction.id)).filter(
-            Transaction.account_id == account_id
+            or_(
+                Transaction.account_id == account_id,
+                Transaction.to_account_id == account_id,
+            )
         ).scalar() or 0
+
+    def balance_for_account(self, account_id: str) -> float:
+        """Calcula saldo real de una cuenta incluyendo transferencias."""
+        account = self.session.query(Account).filter(Account.id == account_id).first()
+        opening = float(account.opening_balance or 0.0) if account else 0.0
+        txs = self.session.query(Transaction).filter(
+            or_(
+                Transaction.account_id == account_id,
+                Transaction.to_account_id == account_id,
+            )
+        ).all()
+
+        total = 0.0
+        for tx in txs:
+            tx_type = normalize_transaction_type(tx.type)
+            amount = float(tx.amount or 0.0)
+            if tx_type == "transferencia":
+                if tx.account_id == account_id:
+                    total -= amount
+                elif tx.to_account_id == account_id:
+                    total += amount
+                continue
+            if tx_type == "ingreso":
+                total += amount
+            else:
+                total -= amount
+        return opening + total
+
+    def total_balance(self) -> float:
+        """Suma el saldo real de todas las cuentas."""
+        accounts = self.session.query(Account).all()
+        return sum(self.balance_for_account(account.id) for account in accounts)
 
     # ==================== UPDATE ====================
 
@@ -615,6 +651,11 @@ class TransactionService:
     def _serialize_transaction(self, transaction: Transaction) -> Dict[str, Any]:
         """Serializa transacción para SyncOutbox."""
         account = self.session.query(Account).filter(Account.id == transaction.account_id).first()
+        to_account = None
+        if transaction.to_account_id:
+            to_account = self.session.query(Account).filter(
+                Account.id == transaction.to_account_id
+            ).first()
         category = self.session.query(Category).filter(Category.id == transaction.category_id).first()
         subcategory = None
         if transaction.subcategory_id:
@@ -631,6 +672,8 @@ class TransactionService:
             "transaction_id": transaction.id,
             "account_id": transaction.account_id,
             "account_name": account.name if account else None,
+            "to_account_id": transaction.to_account_id,
+            "to_account_name": to_account.name if to_account else None,
             "category_id": category.sync_id if category else None,
             "category_name": category.name if category else None,
             "subcategory_id": subcategory.sync_id if subcategory else None,
@@ -678,7 +721,7 @@ class TransactionService:
             event_type=event_type,
             entity_id=entity_id,
             payload=json.dumps(payload),
-            created_at=datetime.utcnow(),
+            created_at=datetime.now(timezone.utc),
             synced=False,
             sync_error=None,
         )

@@ -2,18 +2,23 @@
 TransactionsScreen - Gestion de movimientos.
 """
 
+from datetime import datetime
 from typing import Any, Dict, List, Optional
 
 from kivy.app import App
 from kivy.lang import Builder
 from kivy.metrics import dp
-from kivy.properties import BooleanProperty, ListProperty, StringProperty
+from kivy.properties import BooleanProperty, ListProperty, NumericProperty, StringProperty
 from kivy.uix.screenmanager import Screen
-from kivy.uix.spinner import Spinner
 from kivymd.uix.button import MDFlatButton, MDRaisedButton
+from kivymd.uix.dialog import MDDialog
 from kivymd.uix.textfield import MDTextField
 
+from gf_mobile.ui.dialogs import build_selection_dialog
 from gf_mobile.ui.navigation import NavigationBar
+from gf_mobile.ui.responsive import ResponsiveManager
+from gf_mobile.ui.screen_utils import apply_palette_attrs, category_grid_cols_for_device
+from gf_mobile.ui.widgets.shell import HeroCard, ScreenHeader, SectionCard
 
 
 Builder.load_string(
@@ -23,136 +28,153 @@ Builder.load_string(
 
     MDBoxLayout:
         orientation: "vertical"
-        padding: "12dp"
-        spacing: "8dp"
+        spacing: "0dp"
+        md_bg_color: app.kivy_palette["background"]
 
-        MDBoxLayout:
-            size_hint_y: None
-            height: "42dp"
-
-            MDLabel:
-                text: "Movimientos"
-                font_style: "H6"
-                bold: True
-
-            MDRaisedButton:
-                text: "+ Nuevo"
-                size_hint_x: None
-                width: "96dp"
-                md_bg_color: root.accent_color
-                on_release: root.manager.current = 'add_transaction'
-
-        MDCard:
-            orientation: "vertical"
-            padding: "10dp"
-            spacing: "10dp"
-            adaptive_height: True
-            md_bg_color: root.card_bg_color
-
-            MDTextField:
-                id: filter_date_from
-                hint_text: "Desde YYYY-MM-DD"
-                mode: "rectangle"
-
-            MDTextField:
-                id: filter_date_to
-                hint_text: "Hasta YYYY-MM-DD"
-                mode: "rectangle"
-
+        ScrollView:
             MDBoxLayout:
+                orientation: "vertical"
+                padding: "16dp"
+                spacing: "12dp"
                 size_hint_y: None
-                height: "44dp"
-                spacing: "8dp"
+                height: self.minimum_height
+
+                ScreenHeader:
+                    eyebrow: "OPERATIVA"
+                    title: "Movimientos"
+                    subtitle: "Filtra, revisa y salta a captura rapida"
+                    muted_color: app.kivy_palette["text_secondary"]
+
+                HeroCard:
+                    eyebrow: "Acceso directo"
+                    title: "Filtra antes de entrar"
+                    supporting_text: root.status_message or "Combina fechas, tipo, categorias e importe."
+                    card_color: app.kivy_palette["primary"]
+                    title_color: 1, 1, 1, 1
+                    eyebrow_color: 0.9, 0.95, 1, 1
+
+                    MDBoxLayout:
+                        adaptive_height: True
+                        spacing: "10dp"
+
+                        MDRaisedButton:
+                            text: "+ Nuevo"
+                            md_bg_color: app.kivy_palette["accent"]
+                            on_release: root.manager.current = 'add_transaction'
+
+                        MDFlatButton:
+                            text: "Ver ultimo listado"
+                            theme_text_color: "Custom"
+                            text_color: 1, 1, 1, 1
+                            on_release: root.apply_filters()
+
+                SectionCard:
+                    title: "Filtros activos"
+                    subtitle: root.categories_button_text
+                    card_color: root.card_bg_color
+                    title_color: app.kivy_palette["text_primary"]
+                    muted_color: app.kivy_palette["text_secondary"]
+
+                    MDTextField:
+                        id: filter_date_from
+                        hint_text: "Desde YYYY-MM-DD"
+                        mode: "rectangle"
+
+                    MDTextField:
+                        id: filter_date_to
+                        hint_text: "Hasta YYYY-MM-DD"
+                        mode: "rectangle"
+
+                    MDBoxLayout:
+                        size_hint_y: None
+                        height: "44dp"
+                        spacing: "8dp"
+
+                        MDLabel:
+                            text: "Tipo"
+                            size_hint_x: None
+                            width: "56dp"
+                            theme_text_color: "Hint"
+
+                        MDRaisedButton:
+                            id: type_button
+                            text: root.type_display
+                            size_hint_x: 1
+                            md_bg_color: root.accent_color
+                            on_release: root.open_type_picker()
+
+                    MDBoxLayout:
+                        size_hint_y: None
+                        height: "40dp"
+                        spacing: "8dp"
+
+                        MDFlatButton:
+                            text: root.categories_button_text
+                            theme_text_color: "Custom"
+                            text_color: root.accent_color
+                            on_release: root.toggle_categories()
+
+                        MDFlatButton:
+                            text: "Ocultar" if root.categories_expanded else "Mostrar"
+                            on_release: root.toggle_categories()
+
+                    ScrollView:
+                        size_hint_y: None
+                        height: "124dp" if root.categories_expanded else "0dp"
+                        opacity: 1 if root.categories_expanded else 0
+                        do_scroll_x: False
+
+                        GridLayout:
+                            id: categories_selector
+                            cols: root.category_grid_cols
+                            col_force_default: True
+                            col_default_width: root.category_col_width
+                            spacing: "4dp"
+                            padding: "4dp", "2dp", "4dp", "2dp"
+                            size_hint_x: 1
+                            size_hint_y: None
+                            height: self.minimum_height
+
+                    MDBoxLayout:
+                        size_hint_y: None
+                        height: "46dp"
+                        spacing: "8dp"
+
+                        MDTextField:
+                            id: filter_amount_min
+                            hint_text: "Precio min"
+                            input_filter: "float"
+                            mode: "rectangle"
+
+                        MDTextField:
+                            id: filter_amount_max
+                            hint_text: "Precio max"
+                            input_filter: "float"
+                            mode: "rectangle"
+
+                    MDBoxLayout:
+                        size_hint_y: None
+                        height: "40dp"
+                        spacing: "8dp"
+
+                        MDRaisedButton:
+                            text: "Aplicar"
+                            md_bg_color: root.accent_color
+                            on_release: root.apply_filters()
+
+                        MDFlatButton:
+                            text: "Limpiar"
+                            on_release: root.clear_filters()
 
                 MDLabel:
-                    text: "Tipo"
-                    size_hint_x: None
-                    width: "56dp"
+                    text: root.status_message
+                    halign: "center"
                     theme_text_color: "Hint"
-
-                Spinner:
-                    id: type_spinner
-                    text: root.type_display
-                    values: ("Todos", "ingreso", "gasto", "transferencia")
-                    size_hint_y: None
-                    height: "40dp"
-                    background_normal: ""
-                    background_color: root.accent_color
-                    color: (1, 1, 1, 1)
-                    on_text: root.on_type_selected(self.text)
-
-            MDBoxLayout:
-                size_hint_y: None
-                height: "40dp"
-                spacing: "8dp"
-
-                MDFlatButton:
-                    text: root.categories_button_text
-                    theme_text_color: "Custom"
-                    text_color: root.accent_color
-                    on_release: root.toggle_categories()
-
-                MDFlatButton:
-                    text: "Ocultar" if root.categories_expanded else "Mostrar"
-                    on_release: root.toggle_categories()
-
-            ScrollView:
-                size_hint_y: None
-                height: "124dp" if root.categories_expanded else "0dp"
-                opacity: 1 if root.categories_expanded else 0
-                do_scroll_x: False
-
-                GridLayout:
-                    id: categories_selector
-                    cols: 5
-                    col_force_default: True
-                    col_default_width: (self.width - self.padding[0] - self.padding[2] - self.spacing[0] * 4) / 5
-                    spacing: "4dp"
-                    padding: "4dp", "2dp", "4dp", "2dp"
-                    size_hint_x: 1
-                    size_hint_y: None
-                    height: self.minimum_height
-
-            MDBoxLayout:
-                size_hint_y: None
-                height: "46dp"
-                spacing: "8dp"
-
-                MDTextField:
-                    id: filter_amount_min
-                    hint_text: "Precio min"
-                    input_filter: "float"
-                    mode: "rectangle"
-
-                MDTextField:
-                    id: filter_amount_max
-                    hint_text: "Precio max"
-                    input_filter: "float"
-                    mode: "rectangle"
-
-            MDBoxLayout:
-                size_hint_y: None
-                height: "40dp"
-                spacing: "8dp"
-
-                MDRaisedButton:
-                    text: "Aplicar"
-                    md_bg_color: root.accent_color
-                    on_release: root.apply_filters()
-
-                MDFlatButton:
-                    text: "Limpiar"
-                    on_release: root.clear_filters()
-
-        MDLabel:
-            text: root.status_message
-            halign: "center"
-            theme_text_color: "Hint"
-            font_style: "Caption"
-            text_size: self.width, None
-            max_lines: 2
-            shorten: True
-            shorten_from: "right"
+                    font_style: "Caption"
+                    text_size: self.width, None
+                    max_lines: 2
+                    shorten: True
+                    shorten_from: "right"
 
         NavigationBar:
             id: nav_bar
@@ -171,6 +193,8 @@ class TransactionsScreen(Screen):
     chip_active_text = ListProperty([1, 1, 1, 1])
     chip_inactive_bg = ListProperty([0, 0, 0, 0])
     chip_inactive_text = ListProperty([0, 0, 0, 1])
+    category_grid_cols = NumericProperty(5)
+    category_col_width = NumericProperty(72)
 
     def __init__(self, transaction_service=None, category_service=None, **kwargs):
         super().__init__(**kwargs)
@@ -180,38 +204,75 @@ class TransactionsScreen(Screen):
         self.selected_categories: List[str] = []
         self.category_buttons: Dict[str, MDRaisedButton] = {}
         self.selected_type: Optional[str] = None
+        self._dialog: Optional[MDDialog] = None
 
     def on_enter(self):
         self._apply_theme_colors()
+        self._update_responsive_layout()
         if "nav_bar" in self.ids:
             self.ids.nav_bar.screen_manager = self.manager
             self.ids.nav_bar.current_screen = "transactions"
         self._load_categories()
         self.status_message = "Define filtros y pulsa Aplicar"
 
+    def _update_responsive_layout(self) -> None:
+        self.category_grid_cols = category_grid_cols_for_device(
+            is_phone=ResponsiveManager.is_phone(),
+            is_tablet=ResponsiveManager.is_tablet(),
+            orientation=ResponsiveManager.get_orientation(),
+        )
+        self.category_col_width = 72 if self.category_grid_cols >= 5 else 92 if self.category_grid_cols == 4 else 112
+
     def on_type_selected(self, label: str) -> None:
         self.type_display = label
         value = label.strip().lower()
         self.selected_type = None if value == "todos" else value
 
+    def open_type_picker(self) -> None:
+        self._open_selection_dialog(
+            "Tipo de movimiento",
+            ["Todos", "ingreso", "gasto", "transferencia"],
+            self.on_type_selected,
+        )
+
     def toggle_categories(self) -> None:
         self.categories_expanded = not self.categories_expanded
 
     def apply_filters(self) -> None:
+        date_from_text = self.ids.filter_date_from.text.strip()
+        date_to_text = self.ids.filter_date_to.text.strip()
         amount_min_text = self.ids.filter_amount_min.text.strip()
         amount_max_text = self.ids.filter_amount_max.text.strip()
         try:
             amount_min = float(amount_min_text) if amount_min_text else None
         except ValueError:
-            amount_min = None
+            self.status_message = "Importe minimo invalido"
+            return
         try:
             amount_max = float(amount_max_text) if amount_max_text else None
         except ValueError:
-            amount_max = None
+            self.status_message = "Importe maximo invalido"
+            return
+
+        if amount_min is not None and amount_max is not None and amount_min > amount_max:
+            self.status_message = "El importe minimo no puede ser mayor que el maximo"
+            return
+
+        try:
+            if date_from_text:
+                datetime.strptime(date_from_text, "%Y-%m-%d")
+            if date_to_text:
+                datetime.strptime(date_to_text, "%Y-%m-%d")
+            if date_from_text and date_to_text and date_from_text > date_to_text:
+                self.status_message = "La fecha inicial no puede ser posterior a la final"
+                return
+        except ValueError:
+            self.status_message = "Usa fechas con formato YYYY-MM-DD"
+            return
 
         self.current_filter = {
-            "date_from": self.ids.filter_date_from.text.strip(),
-            "date_to": self.ids.filter_date_to.text.strip(),
+            "date_from": date_from_text,
+            "date_to": date_to_text,
             "type": self.selected_type,
             "categories": list(self.selected_categories),
             "amount_min": amount_min,
@@ -231,7 +292,6 @@ class TransactionsScreen(Screen):
         self.ids.filter_amount_min.text = ""
         self.ids.filter_amount_max.text = ""
         self.type_display = "Todos"
-        self.ids.type_spinner.text = "Todos"
         self.selected_type = None
         for name, button in self.category_buttons.items():
             self._set_category_button_style(button, active=False)
@@ -300,25 +360,17 @@ class TransactionsScreen(Screen):
             button.text_color = self.chip_inactive_text
 
     def _apply_theme_colors(self) -> None:
-        app = App.get_running_app()
-        palette = getattr(app, "kivy_palette", None) if app else None
-        if palette:
-            self.accent_color = palette["primary"]
-            self.card_bg_color = palette["surface"]
-            self.chip_active_bg = palette["primary"]
-            self.chip_active_text = [1, 1, 1, 1]
-            self.chip_inactive_bg = palette["background"]
-            self.chip_inactive_text = palette["text_secondary"]
-        else:
-            from gf_mobile.ui.theme import get_kivy_palette
-
-            fallback = get_kivy_palette()
-            self.accent_color = fallback["primary"]
-            self.card_bg_color = fallback["surface"]
-            self.chip_active_bg = fallback["primary"]
-            self.chip_active_text = [1, 1, 1, 1]
-            self.chip_inactive_bg = fallback["background"]
-            self.chip_inactive_text = fallback["text_secondary"]
+        apply_palette_attrs(
+            self,
+            {
+                "accent_color": "primary",
+                "card_bg_color": "surface",
+                "chip_active_bg": "primary",
+                "chip_inactive_bg": "background",
+                "chip_inactive_text": "text_secondary",
+            },
+        )
+        self.chip_active_text = [1, 1, 1, 1]
 
     @staticmethod
     def _short_error(exc: Exception) -> str:
@@ -329,3 +381,12 @@ class TransactionsScreen(Screen):
 
     def set_transactions(self, items: List[Dict[str, Any]]) -> None:
         self.status_message = f"{len(items)} movimientos"
+
+    def _open_selection_dialog(self, title: str, options: List[str], callback) -> None:
+        self._dialog = build_selection_dialog(
+            self._dialog,
+            title=title,
+            options=options,
+            on_select=callback,
+        )
+        self._dialog.open()

@@ -10,6 +10,9 @@ from kivy.uix.screenmanager import Screen
 
 from gf_mobile.core.transaction_types import normalize_transaction_type
 from gf_mobile.ui.navigation import NavigationBar
+from gf_mobile.ui.responsive import ResponsiveManager
+from gf_mobile.ui.screen_utils import metric_columns_for_device
+from gf_mobile.ui.widgets.shell import HeroCard, MetricCard, ScreenHeader, SectionCard
 
 
 Builder.load_string(
@@ -19,123 +22,90 @@ Builder.load_string(
 
     MDBoxLayout:
         orientation: "vertical"
-        padding: "12dp"
-        spacing: "8dp"
-
-        MDBoxLayout:
-            size_hint_y: None
-            height: "42dp"
-
-            MDLabel:
-                text: "Resumen"
-                font_style: "H6"
-                bold: True
-
-            MDLabel:
-                text: root.date_range
-                halign: "right"
-                theme_text_color: "Hint"
-                text_size: self.width, None
-                shorten: True
-                shorten_from: "right"
+        spacing: "0dp"
+        md_bg_color: app.kivy_palette["background"]
 
         ScrollView:
             MDBoxLayout:
                 orientation: "vertical"
-                spacing: "10dp"
+                padding: "16dp"
+                spacing: "12dp"
                 size_hint_y: None
                 height: self.minimum_height
 
+                ScreenHeader:
+                    eyebrow: "SHELL"
+                    title: "Resumen"
+                    subtitle: root.date_range
+                    muted_color: app.kivy_palette["text_secondary"]
+
+                HeroCard:
+                    eyebrow: "Estado actual"
+                    title: root.balance_text
+                    supporting_text: root.hero_supporting_text
+                    card_color: app.kivy_palette["primary"]
+                    title_color: 1, 1, 1, 1
+                    eyebrow_color: 0.9, 0.95, 1, 1
+
+                    MDBoxLayout:
+                        adaptive_height: True
+                        spacing: "10dp"
+
+                        MDRaisedButton:
+                            text: "+ Gasto"
+                            md_bg_color: app.kivy_palette["accent"]
+                            on_release: root.on_new_transaction("gasto")
+
+                        MDFlatButton:
+                            text: "Ver movimientos"
+                            theme_text_color: "Custom"
+                            text_color: 1, 1, 1, 1
+                            on_release: root.on_view_transactions()
+
                 MDGridLayout:
-                    cols: 2
+                    cols: root.metric_columns
                     spacing: "10dp"
                     size_hint_y: None
                     height: self.minimum_height
 
-                    MDCard:
-                        orientation: "vertical"
-                        padding: "12dp"
-                        size_hint_y: None
-                        height: "120dp"
-                        MDLabel:
-                            text: "Saldo"
-                            theme_text_color: "Hint"
-                            font_style: "Caption"
-                        MDLabel:
-                            text: root.balance_text
-                            font_style: "H6"
-                            bold: True
-                        MDLabel:
-                            text: root.balance_status
-                            theme_text_color: "Hint"
-                            font_style: "Caption"
+                    MetricCard:
+                        label: "Saldo total"
+                        value: root.balance_text
+                        helper: root.balance_status
+                        card_color: app.kivy_palette["surface"]
+                        value_color: app.kivy_palette["text_primary"]
+                        muted_color: app.kivy_palette["text_secondary"]
 
-                    MDCard:
-                        orientation: "vertical"
-                        padding: "12dp"
-                        size_hint_y: None
-                        height: "120dp"
-                        MDLabel:
-                            text: "Ingresos"
-                            theme_text_color: "Hint"
-                            font_style: "Caption"
-                        MDLabel:
-                            text: root.income_text
-                            font_style: "H6"
-                            bold: True
-                        MDLabel:
-                            text: root.income_status
-                            theme_text_color: "Hint"
-                            font_style: "Caption"
+                    MetricCard:
+                        label: "Ingresos"
+                        value: root.income_text
+                        helper: root.income_status
+                        card_color: app.kivy_palette["surface"]
+                        value_color: app.kivy_palette["success"]
+                        muted_color: app.kivy_palette["text_secondary"]
 
-                    MDCard:
-                        orientation: "vertical"
-                        padding: "12dp"
-                        size_hint_y: None
-                        height: "120dp"
-                        MDLabel:
-                            text: "Gastos"
-                            theme_text_color: "Hint"
-                            font_style: "Caption"
-                        MDLabel:
-                            text: root.expenses_text
-                            font_style: "H6"
-                            bold: True
-                        MDLabel:
-                            text: root.expense_status
-                            theme_text_color: "Hint"
-                            font_style: "Caption"
+                    MetricCard:
+                        label: "Gastos"
+                        value: root.expenses_text
+                        helper: root.expense_status
+                        card_color: app.kivy_palette["surface"]
+                        value_color: app.kivy_palette["error"]
+                        muted_color: app.kivy_palette["text_secondary"]
 
-                    MDCard:
-                        orientation: "vertical"
-                        padding: "12dp"
-                        size_hint_y: None
-                        height: "120dp"
-                        MDLabel:
-                            text: "Ahorro"
-                            theme_text_color: "Hint"
-                            font_style: "Caption"
-                        MDLabel:
-                            text: root.savings_percentage_text
-                            font_style: "H6"
-                            bold: True
-                        MDLabel:
-                            text: root.savings_status
-                            theme_text_color: "Hint"
-                            font_style: "Caption"
+                    MetricCard:
+                        label: "Ahorro"
+                        value: root.savings_percentage_text
+                        helper: root.savings_status
+                        card_color: app.kivy_palette["surface"]
+                        value_color: app.kivy_palette["accent"]
+                        muted_color: app.kivy_palette["text_secondary"]
 
-                MDCard:
-                    orientation: "vertical"
-                    padding: "12dp"
-                    spacing: "8dp"
-                    adaptive_height: True
-
-                    MDLabel:
-                        text: "Distribucion"
-                        bold: True
-                        font_style: "Body2"
-                        size_hint_y: None
-                        height: self.texture_size[1]
+                SectionCard:
+                    title: "Distribucion del gasto"
+                    subtitle: "Lectura rapida por grupo presupuestario"
+                    card_color: app.kivy_palette["surface"]
+                    title_color: app.kivy_palette["text_primary"]
+                    muted_color: app.kivy_palette["text_secondary"]
 
                     MDLabel:
                         text: "Necesidades: " + root.needs_percentage_text + " | " + root.needs_detail_text
@@ -170,18 +140,13 @@ Builder.load_string(
                         size_hint_y: None
                         height: "6dp"
 
-                MDCard:
-                    orientation: "vertical"
-                    padding: "12dp"
-                    spacing: "8dp"
-                    adaptive_height: True
+                SectionCard:
+                    title: "Salud financiera"
+                    subtitle: "Score y lectura operativa del periodo"
+                    card_color: app.kivy_palette["surface"]
+                    title_color: app.kivy_palette["text_primary"]
+                    muted_color: app.kivy_palette["text_secondary"]
 
-                    MDLabel:
-                        text: "Salud financiera"
-                        bold: True
-                        font_style: "Body2"
-                        size_hint_y: None
-                        height: self.texture_size[1]
                     MDLabel:
                         text: root.health_score_text
                         size_hint_y: None
@@ -196,29 +161,27 @@ Builder.load_string(
                         size_hint_y: None
                         height: self.texture_size[1]
 
-                MDBoxLayout:
-                    orientation: "vertical"
-                    adaptive_height: True
-                    spacing: "8dp"
+                SectionCard:
+                    title: "Siguiente paso"
+                    subtitle: "Acciones recomendadas desde la shell principal"
+                    card_color: app.kivy_palette["surface"]
+                    title_color: app.kivy_palette["text_primary"]
+                    muted_color: app.kivy_palette["text_secondary"]
 
                     MDBoxLayout:
-                        size_hint_y: None
-                        height: "44dp"
+                        adaptive_height: True
                         spacing: "8dp"
 
                         MDRaisedButton:
-                            text: "+ Gasto"
-                            on_release: root.on_new_transaction("gasto")
-
-                        MDRaisedButton:
                             text: "+ Ingreso"
+                            md_bg_color: app.kivy_palette["primary"]
                             on_release: root.on_new_transaction("ingreso")
 
-                    MDFlatButton:
-                        text: "Ver movimientos"
-                        size_hint_y: None
-                        height: "42dp"
-                        on_release: root.on_view_transactions()
+                        MDFlatButton:
+                            text: "Categorias"
+                            theme_text_color: "Custom"
+                            text_color: app.kivy_palette["primary"]
+                            on_release: root.manager.current = "categories"
 
                 MDLabel:
                     text: root.status_message
@@ -262,6 +225,8 @@ class DashboardScreen(Screen):
     health_score_text = StringProperty("0 / 900")
     health_score_progress = NumericProperty(0)
     health_status = StringProperty("Sin datos")
+    hero_supporting_text = StringProperty("Sin movimientos recientes")
+    metric_columns = NumericProperty(2)
 
     status_message = StringProperty("")
 
@@ -276,7 +241,14 @@ class DashboardScreen(Screen):
         if "nav_bar" in self.ids:
             self.ids.nav_bar.screen_manager = self.manager
             self.ids.nav_bar.current_screen = "dashboard"
+        self._update_responsive_layout()
         self.refresh()
+
+    def _update_responsive_layout(self) -> None:
+        self.metric_columns = metric_columns_for_device(
+            is_phone=ResponsiveManager.is_phone(),
+            orientation=ResponsiveManager.get_orientation(),
+        )
 
     def refresh(self) -> None:
         try:
@@ -328,6 +300,11 @@ class DashboardScreen(Screen):
             )
             self.savings_percentage_text = f"{savings_pct:.1f}%"
             self.savings_status = "Bueno" if savings_pct >= 20 else "Mejorable"
+            self.hero_supporting_text = (
+                f"{self.income_status} · {self.expense_status}"
+                if period_transactions
+                else "Empieza registrando movimientos para activar el resumen"
+            )
 
             self._update_budget_distribution(period_transactions)
             self._update_health_score(period_balance, total_income, total_expenses)
@@ -344,25 +321,13 @@ class DashboardScreen(Screen):
             self.status_message = self._short_error(exc)
 
     def _calculate_total_balance(self, transactions) -> float:
-        opening_balance_total = 0.0
-        session = getattr(self.transaction_service, "session", None)
-        if session is not None:
-            try:
-                from gf_mobile.persistence.models import Account
-
-                opening_balance_total = sum(
-                    float(account.opening_balance or 0.0) for account in session.query(Account).all()
-                )
-            except Exception:
-                opening_balance_total = 0.0
-
-        income_total = sum(
-            float(tx.amount or 0.0) for tx in transactions if normalize_transaction_type(tx.type) == "ingreso"
-        )
-        expense_total = sum(
-            float(tx.amount or 0.0) for tx in transactions if normalize_transaction_type(tx.type) == "gasto"
-        )
-        return opening_balance_total + income_total - expense_total
+        service = self.transaction_service
+        if service is None:
+            return 0.0
+        try:
+            return float(service.total_balance())
+        except Exception:
+            return 0.0
 
     def _update_budget_distribution(self, transactions) -> None:
         try:

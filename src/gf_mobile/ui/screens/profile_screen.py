@@ -9,6 +9,8 @@ from kivy.uix.screenmanager import Screen
 
 from gf_mobile.core.session_manager import SessionManager
 from gf_mobile.ui.navigation import NavigationBar
+from gf_mobile.ui.screen_utils import apply_palette_attrs
+from gf_mobile.ui.widgets.shell import HeroCard, ScreenHeader, SectionCard
 
 
 Builder.load_string(
@@ -18,133 +20,102 @@ Builder.load_string(
 
     MDBoxLayout:
         orientation: "vertical"
-        padding: "12dp"
-        spacing: "8dp"
+        spacing: "0dp"
+        md_bg_color: app.kivy_palette["background"]
 
-        MDLabel:
-            text: "Perfil"
-            font_style: "H6"
-            bold: True
-            size_hint_y: None
-            height: "36dp"
-
-        MDCard:
-            orientation: "vertical"
-            adaptive_height: True
-            padding: "12dp"
-            spacing: "6dp"
-            md_bg_color: root.surface_color
-
-            MDLabel:
-                text: "Cuenta"
-                bold: True
-                font_style: "Body2"
-
-            MDLabel:
-                text: root.email_text
-                theme_text_color: "Hint"
-
-            MDLabel:
-                text: root.session_text
-                theme_text_color: "Hint"
-
-        MDCard:
-            orientation: "vertical"
-            adaptive_height: True
-            padding: "12dp"
-            spacing: "8dp"
-
-            MDLabel:
-                text: "Apariencia"
-                bold: True
-                font_style: "Body2"
-
+        ScrollView:
             MDBoxLayout:
+                orientation: "vertical"
+                padding: "16dp"
+                spacing: "12dp"
                 size_hint_y: None
-                height: "42dp"
-                spacing: "8dp"
+                height: self.minimum_height
 
-                MDRaisedButton:
-                    text: "Light"
-                    md_bg_color: root.primary_color if root.current_theme == "light" else root.surface_color
-                    on_release: root.set_theme("light")
+                ScreenHeader:
+                    eyebrow: "PERSONAL"
+                    title: "Perfil"
+                    subtitle: "Sesion, apariencia y accesos rapidos"
+                    muted_color: app.kivy_palette["text_secondary"]
 
-                MDRaisedButton:
-                    text: "Dark"
-                    md_bg_color: root.primary_color if root.current_theme == "dark" else root.surface_color
-                    on_release: root.set_theme("dark")
+                HeroCard:
+                    eyebrow: "Cuenta"
+                    title: root.email_text
+                    supporting_text: root.session_text
+                    card_color: root.primary_color
+                    title_color: 1, 1, 1, 1
+                    eyebrow_color: 0.9, 0.95, 1, 1
 
-        MDCard:
-            orientation: "vertical"
-            adaptive_height: True
-            padding: "12dp"
-            spacing: "8dp"
+                SectionCard:
+                    title: "Apariencia"
+                    subtitle: "Tema global de la app"
+                    card_color: root.surface_color
+                    title_color: app.kivy_palette["text_primary"]
+                    muted_color: app.kivy_palette["text_secondary"]
 
-            MDLabel:
-                text: "Accesos rapidos"
-                bold: True
-                font_style: "Body2"
+                    MDBoxLayout:
+                        size_hint_y: None
+                        height: "42dp"
+                        spacing: "8dp"
 
-            MDTextField:
-                id: quick_step_value
-                hint_text: "Paso +/-: ej 5"
-                mode: "rectangle"
-                text: root.quick_step_text
+                        MDRaisedButton:
+                            text: "Light"
+                            md_bg_color: root.primary_color if root.current_theme == "light" else root.surface_color
+                            on_release: root.set_theme("light")
 
-            MDRaisedButton:
-                text: "Guardar paso"
-                md_bg_color: root.primary_color
-                on_release: root.save_quick_step()
+                        MDRaisedButton:
+                            text: "Dark"
+                            md_bg_color: root.primary_color if root.current_theme == "dark" else root.surface_color
+                            on_release: root.set_theme("dark")
 
+                SectionCard:
+                    title: "Accesos rapidos"
+                    subtitle: "Atajos para captura repetitiva"
+                    card_color: root.surface_color
+                    title_color: app.kivy_palette["text_primary"]
+                    muted_color: app.kivy_palette["text_secondary"]
 
-            MDBoxLayout:
-                size_hint_y: None
-                height: "42dp"
-                spacing: "8dp"
+                    MDTextField:
+                        id: quick_step_value
+                        hint_text: "Paso +/-: ej 5"
+                        mode: "rectangle"
+                        text: root.quick_step_text
 
-                MDLabel:
-                    text: "Pantalla rapida al abrir"
-                    theme_text_color: "Hint"
+                    MDRaisedButton:
+                        text: "Guardar paso"
+                        md_bg_color: root.primary_color
+                        on_release: root.save_quick_step()
 
-                MDSwitch:
-                    id: quick_entry_toggle
-                    active: root.quick_entry_enabled
-                    on_active: root.on_quick_entry_toggle(self.active)
+                    MDBoxLayout:
+                        size_hint_y: None
+                        height: "42dp"
+                        spacing: "8dp"
 
-        MDCard:
-            orientation: "vertical"
-            adaptive_height: True
-            padding: "12dp"
-            spacing: "8dp"
+                        MDLabel:
+                            text: "Pantalla rapida al abrir"
+                            theme_text_color: "Hint"
 
-            MDLabel:
-                text: "Opciones"
-                bold: True
-                font_style: "Body2"
+                        MDSwitch:
+                            id: quick_entry_toggle
+                            active: root.quick_entry_enabled
+                            on_active: root.on_quick_entry_toggle(self.active)
 
-            MDRaisedButton:
-                text: "Estado de sincronizacion"
-                md_bg_color: root.primary_color
-                on_release: root.open_sync_status()
+                SectionCard:
+                    title: "Sesion y sync"
+                    subtitle: root.status_message
+                    card_color: root.surface_color
+                    title_color: app.kivy_palette["text_primary"]
+                    muted_color: app.kivy_palette["text_secondary"]
 
-            MDFlatButton:
-                text: "Cerrar sesion"
-                theme_text_color: "Custom"
-                text_color: root.error_color
-                on_release: root.logout()
+                    MDRaisedButton:
+                        text: "Estado de sincronizacion"
+                        md_bg_color: root.primary_color
+                        on_release: root.open_sync_status()
 
-        MDLabel:
-            text: root.status_message
-            theme_text_color: "Hint"
-            font_style: "Caption"
-            text_size: self.width, None
-            max_lines: 2
-            shorten: True
-            shorten_from: "right"
-            size_hint_y: None
-            height: "24dp"
-
-        Widget:
+                    MDFlatButton:
+                        text: "Cerrar sesion"
+                        theme_text_color: "Custom"
+                        text_color: root.error_color
+                        on_release: root.logout()
 
         NavigationBar:
             id: nav_bar
@@ -225,16 +196,14 @@ class ProfileScreen(Screen):
             self.status_message = f"Error: {exc}"
 
     def _apply_theme_colors(self) -> None:
-        app = App.get_running_app()
-        palette = getattr(app, "kivy_palette", None) if app else None
-        if not palette:
-            from gf_mobile.ui.theme import get_kivy_palette
-
-            palette = get_kivy_palette()
-        if palette:
-            self.primary_color = palette.get("primary", self.primary_color)
-            self.surface_color = palette.get("surface", self.surface_color)
-            self.error_color = palette.get("error", self.error_color)
+        apply_palette_attrs(
+            self,
+            {
+                "primary_color": "primary",
+                "surface_color": "surface",
+                "error_color": "error",
+            },
+        )
 
     def open_sync_status(self) -> None:
         self.manager.current = "sync_status"

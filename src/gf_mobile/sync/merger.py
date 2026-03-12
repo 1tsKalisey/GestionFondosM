@@ -6,7 +6,7 @@ Aplica eventos remotos a la base local con resoluciÃ³n simple de conflictos.
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict, Iterable, Optional, Tuple
 
 from sqlalchemy import func
@@ -138,15 +138,20 @@ class MergerService:
         incoming_dt = self._parse_dt(incoming_iso)
         if not local_dt:
             return True
+        if local_dt.tzinfo is None:
+            local_dt = local_dt.replace(tzinfo=timezone.utc)
         return incoming_dt >= local_dt
 
     def _parse_dt(self, value: Optional[str]) -> datetime:
         if not value:
-            return datetime.min
+            return datetime.min.replace(tzinfo=timezone.utc)
         try:
-            return datetime.fromisoformat(value.replace("Z", "+00:00"))
+            parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+            if parsed.tzinfo is None:
+                return parsed.replace(tzinfo=timezone.utc)
+            return parsed.astimezone(timezone.utc)
         except Exception:
-            return datetime.min
+            return datetime.min.replace(tzinfo=timezone.utc)
 
     def _set_fields(self, obj: Any, payload: Dict[str, Any], fields: Iterable[str]) -> None:
         for f in fields:
@@ -163,15 +168,18 @@ class MergerService:
             return
 
         if operation == "delete":
-            existing = session.query(Transaction).filter(Transaction.id == tx_id).first()
+            existing = self._find_transaction(session, str(tx_id))
             if existing:
                 session.delete(existing)
             return
 
-        existing = session.query(Transaction).filter(Transaction.id == tx_id).first()
+        existing = self._find_transaction(session, str(tx_id))
         incoming_updated = payload.get("updated_at") or (event.get("createdAt") if event else None)
 
         account = self._ensure_account(session, payload.get("account_id"), payload.get("account_name"), payload.get("currency"))
+        to_account = self._ensure_account(
+            session, payload.get("to_account_id"), payload.get("to_account_name"), payload.get("currency")
+        )
         category = self._ensure_category(session, payload.get("category_id"), payload.get("category_name"))
         subcategory = None
         if payload.get("subcategory_id"):
@@ -183,6 +191,7 @@ class MergerService:
             tx = Transaction(
                 id=tx_id,
                 account_id=account.id if account else payload.get("account_id"),
+                to_account_id=to_account.id if to_account else payload.get("to_account_id"),
                 category_id=category.id if category else payload.get("category_id"),
                 subcategory_id=subcategory.id if subcategory else payload.get("subcategory_id"),
                 type=normalize_transaction_type(payload.get("type")),
@@ -220,6 +229,8 @@ class MergerService:
                 existing.type = normalize_transaction_type(payload.get("type"))
             if account:
                 existing.account_id = account.id
+            if "to_account_id" in payload:
+                existing.to_account_id = to_account.id if to_account else None
             if category:
                 existing.category_id = category.id
             if subcategory:
@@ -238,6 +249,12 @@ class MergerService:
                 payload.get("tags", []),
                 payload.get("tag_ids", []),
             )
+
+    def _find_transaction(self, session: Session, tx_id: str) -> Optional[Transaction]:
+        existing = session.query(Transaction).filter(Transaction.id == tx_id).first()
+        if existing:
+            return existing
+        return session.query(Transaction).filter(Transaction.server_id == tx_id).first()
 
     def _merge_transaction_tags(
         self,

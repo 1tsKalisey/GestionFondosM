@@ -11,7 +11,7 @@ Verifica:
 
 import json
 import pytest
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, Session
 from tempfile import NamedTemporaryFile
@@ -63,7 +63,7 @@ def setup_data(session):
         type="checking",
         currency="USD",
         opening_balance=1000.0,
-        created_at=datetime.utcnow(),
+        created_at=datetime.now(timezone.utc),
     )
     session.add(account)
 
@@ -109,7 +109,7 @@ class TestTransactionCreate:
 
     def test_create_basic_transaction(self, service, setup_data):
         """Crea una transacción básica."""
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         
         txn = service.create(
             account_id=setup_data["account"].id,
@@ -273,7 +273,7 @@ class TestTransactionRead:
             type="savings",
             currency="USD",
             opening_balance=0.0,
-            created_at=datetime.utcnow(),
+            created_at=datetime.now(timezone.utc),
         )
         service.session.add(account2)
         service.session.commit()
@@ -433,6 +433,52 @@ class TestTransactionRead:
 
         count = service.count_by_account(setup_data["account"].id)
         assert count == 3
+
+    def test_balance_for_account_includes_incoming_and_outgoing_transfers(self, service, setup_data, session):
+        """Replica el cálculo de saldo del escritorio."""
+        target = Account(
+            id=generate_uuid(),
+            user_id=setup_data["user"].id,
+            name="Savings",
+            type="savings",
+            currency="USD",
+            opening_balance=100.0,
+            created_at=datetime.now(timezone.utc),
+        )
+        session.add(target)
+        session.commit()
+
+        service.create(
+            account_id=setup_data["account"].id,
+            type_="ingreso",
+            amount=200.0,
+            category_id=1,
+        )
+        service.create(
+            account_id=setup_data["account"].id,
+            type_="gasto",
+            amount=50.0,
+            category_id=1,
+        )
+
+        outgoing = Transaction(
+            id=generate_uuid(),
+            account_id=setup_data["account"].id,
+            to_account_id=target.id,
+            category_id=1,
+            type="transferencia",
+            amount=75.0,
+            currency="USD",
+            occurred_at=datetime.now(timezone.utc),
+            synced=True,
+        )
+        session.add(outgoing)
+        session.commit()
+
+        assert service.balance_for_account(setup_data["account"].id) == pytest.approx(1075.0)
+        assert service.balance_for_account(target.id) == pytest.approx(175.0)
+        assert service.total_balance() == pytest.approx(1250.0)
+        assert service.count_by_account(target.id) == 1
 
 
 class TestTransactionUpdate:

@@ -2,112 +2,115 @@
 Quick entry screen for one-tap income/expense actions.
 """
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 
 from kivy.app import App
-from kivy.clock import Clock
 from kivy.lang import Builder
 from kivy.properties import ListProperty, NumericProperty, StringProperty
 from kivy.uix.screenmanager import Screen
 from kivymd.uix.button import MDRaisedButton
 from kivymd.uix.dialog import MDDialog
 
+from gf_mobile.ui.dialogs import build_message_dialog
+from gf_mobile.ui.screen_utils import apply_palette_attrs, resolve_palette
+from gf_mobile.ui.widgets.shell import ScreenHeader, SectionCard
+
 
 Builder.load_string(
     """
+<QuickAdjustButton>:
+    size_hint: None, None
+    width: root.button_width
+    height: root.button_height
+    size_hint_min_x: None
+    size_hint_min_y: None
+    _min_width: root.button_width
+    _min_height: root.button_height
+    padding: "0dp", "0dp", "0dp", "0dp"
+
 <QuickEntryScreen>:
     name: "quick_entry"
 
-    MDFloatLayout:
+    MDBoxLayout:
+        orientation: "vertical"
+        padding: "16dp"
+        spacing: "12dp"
         md_bg_color: root.page_bg_color
-        MDLabel:
-            text: "Acceso rapido"
-            font_style: "H6"
-            bold: True
-            size_hint: None, None
-            height: "34dp"
-            pos_hint: {"x": 0.04, "top": 0.98}
 
-        MDLabel:
-            text: "Registra en un toque"
-            theme_text_color: "Hint"
-            size_hint: None, None
-            height: "24dp"
-            pos_hint: {"x": 0.04, "top": 0.93}
+        ScreenHeader:
+            eyebrow: "RAPIDO"
+            title: "Acceso rapido"
+            subtitle: "Captura en un toque sin salir del flujo normal"
+            muted_color: app.kivy_palette["text_secondary"]
 
-        AnchorLayout:
-            anchor_x: "center"
-            anchor_y: "center"
-            size_hint: 1, 1
+        SectionCard:
+            title: "Importe"
+            subtitle: root.status_message or "Usa el paso configurado en perfil para subir o bajar el importe."
+            card_color: root.surface_color
+            title_color: app.kivy_palette["text_primary"]
+            muted_color: app.kivy_palette["text_secondary"]
+
+            MDTextField:
+                id: amount_input
+                text: root.amount_text
+                helper_text: "Cantidad"
+                helper_text_mode: "on_focus"
+                halign: "center"
+                font_size: "18sp"
+                size_hint_y: None
+                height: "48dp"
+                on_text: root.on_amount_text(self.text)
+
+        SectionCard:
+            title: "Ajuste"
+            subtitle: "Sube o baja el importe antes de registrar"
+            card_color: root.surface_color
+            title_color: app.kivy_palette["text_primary"]
+            muted_color: app.kivy_palette["text_secondary"]
 
             MDBoxLayout:
-                orientation: "horizontal"
+                adaptive_height: True
+                spacing: "10dp"
+
+                QuickAdjustButton:
+                    text: "-"
+                    md_bg_color: root.error_color
+                    font_size: "22sp"
+                    on_release: root.adjust_amount(-1)
+
+                QuickAdjustButton:
+                    text: "+"
+                    md_bg_color: root.success_color
+                    font_size: "22sp"
+                    on_release: root.adjust_amount(1)
+
+            MDBoxLayout:
+                adaptive_height: True
                 spacing: "8dp"
-                size_hint_x: None
-                width: "320dp"
-                size_hint_y: None
-                height: root.height * 0.4
 
-                AnchorLayout:
-                    anchor_y: "center"
-                    size_hint_x: None
-                    
-
-                    MDRaisedButton:
-                        text: "-"
-                        md_bg_color: root.error_color
-                        size_hint: None, None
-                        size: root.height * 0.1,root.height * 0.4
-                        on_release: root.adjust_amount(-1)
-
-                AnchorLayout:
-                    anchor_y: "center"
+                MDRaisedButton:
+                    text: "Guardar rapido"
+                    md_bg_color: root.primary_color
+                    theme_text_color: "Custom"
+                    text_color: root.text_primary_color
                     size_hint_x: 1
+                    on_release: root.submit_amount()
 
-                    MDTextField:
-                        id: amount_input
-                        text: root.amount_text
-                        helper_text: "Cantidad"
-                        helper_text_mode: "on_focus"                        
-                        halign: "center"
-                        font_size: "32sp"
-                        size_hint: 1, None
-                        height: root.height * 0.4
-                        on_text: root.on_amount_text(self.text)
+                MDFlatButton:
+                    text: "Dashboard"
+                    theme_text_color: "Custom"
+                    text_color: root.primary_color
+                    on_release: root.manager.current = "dashboard"
 
-                AnchorLayout:
-                    anchor_y: "center"
-                    size_hint_x: None
-                    
-
-                    MDRaisedButton:
-                        text: "+"
-                        md_bg_color: root.success_color
-                        size_hint: None, None
-                        size: root.height * 0.1,root.height * 0.4
-                        on_release: root.adjust_amount(1)
-
-        MDRaisedButton:
-            text: "LISTO"
-            md_bg_color: root.primary_color
-            theme_text_color: "Custom"
-            text_color: root.text_primary_color
-            size_hint_x: None
-            width: root.height * 0.4
-            size_hint_y: None
-            height: root.height * 0.1
-            pos_hint: {"center_x": 0.5, "y": 0.12}
-            on_release: root.submit_amount()
-
-        MDFloatingActionButton:
-            icon: "home"
-            md_bg_color: root.primary_color
-            icon_color: root.text_primary_color
-            pos_hint: {"right": 0.98, "y": 0.02}
-            on_release: root.manager.current = "dashboard"
+        Widget:
     """
 )
+
+
+class QuickAdjustButton(MDRaisedButton):
+    button_width = NumericProperty(160)
+    button_height = NumericProperty(160)
 
 
 class QuickEntryScreen(Screen):
@@ -137,25 +140,6 @@ class QuickEntryScreen(Screen):
         app = App.get_running_app()
         if app:
             app.bind(kivy_palette=lambda *_: self._apply_theme_colors())
-        amount_input = self.ids.get("amount_input")
-        if amount_input:
-            amount_input.bind(height=self._schedule_center_input, font_size=self._schedule_center_input)
-            self._schedule_center_input()
-
-    def _schedule_center_input(self, *args) -> None:
-        Clock.schedule_once(self._center_input_text, 0)
-
-    def _center_input_text(self, *args) -> None:
-        amount_input = self.ids.get("amount_input")
-        if not amount_input:
-            return
-        if getattr(self, "_padding_updating", False):
-            return
-        try:
-            self._padding_updating = True
-            amount_input.padding = [0, (amount_input.height - amount_input.font_size) / 2]
-        finally:
-            self._padding_updating = False
 
     def _refresh_step(self) -> None:
         app = App.get_running_app()
@@ -225,7 +209,7 @@ class QuickEntryScreen(Screen):
                 amount=amount,
                 category_id=category.id,
                 note="Acceso rapido",
-                occurred_at=datetime.utcnow(),
+                occurred_at=datetime.now(timezone.utc),
             )
             self._trigger_background_sync()
             sign = "+" if tx_type == "ingreso" else "-"
@@ -256,44 +240,34 @@ class QuickEntryScreen(Screen):
         threading.Thread(target=_worker, daemon=True).start()
 
     def _show_dialog(self, title: str, message: str, is_error: bool) -> None:
-        if self._dialog:
-            self._dialog.dismiss()
         app = App.get_running_app()
-        palette = getattr(app, "kivy_palette", None) if app else None
+        palette = resolve_palette()
         if palette:
             button_color = palette["error"] if is_error else palette["primary"]
         else:
-            from gf_mobile.ui.theme import get_kivy_palette
-
-            fallback = get_kivy_palette()
-            button_color = fallback["error"] if is_error else fallback["primary"]
-        self._dialog = MDDialog(
+            button_color = self.error_color if is_error else self.primary_color
+        self._dialog = build_message_dialog(
+            self._dialog,
             title=title,
-            text=message,
-            buttons=[
-                MDRaisedButton(
-                    text="Aceptar",
-                    md_bg_color=button_color,
-                    on_release=lambda *_: self._dialog.dismiss(),
-                )
-            ],
+            message=message,
+            button_color=button_color,
         )
         self._dialog.open()
 
     def _apply_theme_colors(self) -> None:
         app = App.get_running_app()
-        palette = getattr(app, "kivy_palette", None) if app else None
-        if not palette:
-            from gf_mobile.ui.theme import get_kivy_palette
-
-            palette = get_kivy_palette()
+        palette = apply_palette_attrs(
+            self,
+            {
+                "page_bg_color": "background",
+                "primary_color": "primary",
+                "success_color": "success",
+                "error_color": "error",
+                "surface_color": "surface",
+                "text_primary_color": "text_primary",
+            },
+        )
         if palette:
-            self.page_bg_color = palette.get("background", self.page_bg_color)
-            self.primary_color = palette.get("primary", self.primary_color)
-            self.success_color = palette.get("success", self.success_color)
-            self.error_color = palette.get("error", self.error_color)
-            self.surface_color = palette.get("surface", self.surface_color)
-            self.text_primary_color = palette.get("text_primary", self.text_primary_color)
-        else:
-            is_dark = bool(app and getattr(app.theme_cls, "theme_style", "Light") == "Dark")
-            self.page_bg_color = [0.10, 0.11, 0.14, 1] if is_dark else [0.95, 0.97, 1, 1]
+            return
+        is_dark = bool(app and getattr(app.theme_cls, "theme_style", "Light") == "Dark")
+        self.page_bg_color = [0.10, 0.11, 0.14, 1] if is_dark else [0.95, 0.97, 1, 1]

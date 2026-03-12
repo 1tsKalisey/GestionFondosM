@@ -1,4 +1,4 @@
-﻿"""Sync status screen."""
+"""Sync status screen."""
 
 from datetime import datetime
 
@@ -8,6 +8,7 @@ from kivy.uix.screenmanager import Screen
 from kivymd.uix.button import MDRaisedButton
 
 from gf_mobile.ui.navigation import NavigationBar
+from gf_mobile.ui.widgets.shell import HeroCard, ScreenHeader, SectionCard
 
 Builder.load_string(
     """
@@ -16,48 +17,49 @@ Builder.load_string(
 
     MDBoxLayout:
         orientation: "vertical"
-        padding: "12dp"
-        spacing: "8dp"
+        spacing: "0dp"
+        md_bg_color: app.kivy_palette["background"]
 
-        MDLabel:
-            text: root.title
-            font_style: "H6"
-            bold: True
-            size_hint_y: None
-            height: "36dp"
+        ScrollView:
+            MDBoxLayout:
+                orientation: "vertical"
+                padding: "16dp"
+                spacing: "12dp"
+                size_hint_y: None
+                height: self.minimum_height
 
-        MDCard:
-            orientation: "vertical"
-            padding: "12dp"
-            spacing: "8dp"
-            adaptive_height: True
+                ScreenHeader:
+                    eyebrow: "SINCRONIZACION"
+                    title: root.title
+                    subtitle: "Estado actual de Firestore y del outbox local"
+                    muted_color: app.kivy_palette["text_secondary"]
 
-            MDLabel:
-                text: root.last_sync
-                theme_text_color: "Hint"
+                HeroCard:
+                    eyebrow: "Ultima actividad"
+                    title: root.last_sync
+                    supporting_text: root.pending_changes
+                    card_color: app.kivy_palette["primary"] if not root.has_error else app.kivy_palette["error"]
+                    title_color: 1, 1, 1, 1
+                    eyebrow_color: 1, 1, 1, 0.82
 
-            MDLabel:
-                text: root.pending_changes
-                theme_text_color: "Hint"
+                SectionCard:
+                    title: "Control manual"
+                    subtitle: root.status_message or "Lanza una sync completa cuando necesites confirmar consistencia."
+                    card_color: app.kivy_palette["surface"]
+                    title_color: app.kivy_palette["text_primary"]
+                    muted_color: app.kivy_palette["text_secondary"]
 
-            MDRaisedButton:
-                text: "Sincronizar ahora"
-                md_bg_color: app.kivy_palette["primary"]
-                on_release: root.on_sync_now()
-                disabled: root.is_syncing
+                    MDRaisedButton:
+                        text: "Sincronizar ahora"
+                        md_bg_color: app.kivy_palette["primary"]
+                        on_release: root.on_sync_now()
+                        disabled: root.is_syncing
 
-        MDLabel:
-            text: root.status_message
-            halign: "center"
-            theme_text_color: "Custom"
-            text_color: app.kivy_palette["error"] if root.has_error else app.kivy_palette["text_secondary"]
-            text_size: self.width, None
-            max_lines: 3
-            shorten: True
-            shorten_from: "right"
-
-        Widget:
-            size_hint_y: 1
+                    MDFlatButton:
+                        text: "Volver al perfil"
+                        theme_text_color: "Custom"
+                        text_color: app.kivy_palette["primary"]
+                        on_release: root.manager.current = "profile"
 
         NavigationBar:
             id: nav_bar
@@ -81,7 +83,7 @@ class SyncStatusScreen(Screen):
     def on_enter(self):
         if "nav_bar" in self.ids:
             self.ids.nav_bar.screen_manager = self.manager
-            self.ids.nav_bar.current_screen = "sync_status"
+            self.ids.nav_bar.current_screen = "profile"
         self.update_pending_count()
 
     def on_sync_now(self) -> None:

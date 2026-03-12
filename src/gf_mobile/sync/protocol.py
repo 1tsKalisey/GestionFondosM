@@ -15,6 +15,7 @@ from sqlalchemy.orm import Session
 from gf_mobile.core.exceptions import SyncError
 from gf_mobile.persistence.models import SyncOutbox, SyncState, AppliedEvent
 from gf_mobile.sync.firestore_client import FirestoreClient
+from gf_mobile.sync.initial_sync import InitialSyncService
 from gf_mobile.sync.merger import MergerService
 
 
@@ -195,3 +196,22 @@ class SyncProtocol:
             raise SyncError(f"Error en pull_and_apply: {str(e)}")
         finally:
             session.close()
+
+    async def refresh_base_snapshot(self) -> Dict[str, int]:
+        """
+        Refresca documentos base remotos publicados por desktop.
+
+        Esto cubre cuentas, categorías, presupuestos y transacciones
+        que el desktop sube como snapshot documental y que no viajan por
+        eventos incrementales.
+        """
+        try:
+            service = InitialSyncService(
+                session_factory=self.session_factory,
+                firestore_client=self.firestore_client,
+                user_uid=self.user_uid,
+                user_id=None,
+            )
+            return await service.perform_snapshot_sync(mark_completed=False)
+        except Exception as e:
+            raise SyncError(f"Error refrescando snapshot base: {str(e)}")

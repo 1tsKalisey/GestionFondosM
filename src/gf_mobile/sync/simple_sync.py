@@ -70,6 +70,9 @@ class SimpleSyncService:
             
             # Pull: Recibir y aplicar cambios remotos
             pulled = await self.sync_protocol.pull_and_apply(page_size=pull_limit)
+
+            # Snapshot base: refresca documentos publicados por desktop
+            await self.sync_protocol.refresh_base_snapshot()
             print(f"[SYNC][M] sync_now done success=True pushed={pushed} pulled={pulled}")
             
             return SyncResult(

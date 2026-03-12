@@ -71,7 +71,12 @@ class Account(Base):
     server_id = Column(String(255), nullable=True)
 
     user = relationship("User", back_populates="accounts")
-    transactions = relationship("Transaction", back_populates="account", cascade="all, delete-orphan")
+    transactions = relationship(
+        "Transaction",
+        back_populates="account",
+        cascade="all, delete-orphan",
+        foreign_keys="Transaction.account_id",
+    )
 
     __table_args__ = (Index("ix_accounts_user_id", "user_id"),)
 
@@ -126,6 +131,7 @@ class Transaction(Base):
 
     id = Column(String(36), primary_key=True, default=generate_uuid)
     account_id = Column(String(36), ForeignKey("accounts.id"), nullable=False)
+    to_account_id = Column(String(36), ForeignKey("accounts.id"), nullable=True)
     category_id = Column(Integer, ForeignKey("categories.id"), nullable=False)
     subcategory_id = Column(Integer, ForeignKey("subcategories.id"), nullable=True)
     recurring_id = Column(Integer, ForeignKey("recurring_transactions.id"), nullable=True)
@@ -153,7 +159,8 @@ class Transaction(Base):
     conflict_resolved = Column(Boolean, default=False)
     server_id = Column(String(255), nullable=True)
 
-    account = relationship("Account", back_populates="transactions")
+    account = relationship("Account", back_populates="transactions", foreign_keys=[account_id])
+    to_account = relationship("Account", foreign_keys=[to_account_id])
     category = relationship("Category", back_populates="transactions")
     subcategory = relationship("SubCategory", back_populates="transactions")
     recurring = relationship("RecurringTransaction", back_populates="transactions")
