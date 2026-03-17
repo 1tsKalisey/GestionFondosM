@@ -66,13 +66,12 @@ def build_selection_dialog(
         on_select(value)
 
     items = []
-    dialog = MDDialog(title=title, type="simple", items=items)
     for option in option_list:
         items.append(
             OneLineListItem(
                 text=option,
-                on_release=lambda _item, value=option, dlg=dialog: _handle_select(value, dlg),
+                on_release=lambda _item, value=option: _handle_select(value, dialog),
             )
         )
-    dialog.items = items
+    dialog = MDDialog(title=title, type="simple", items=items)
     return dialog
