@@ -588,7 +588,7 @@ class AuthService:
         params = {"key": self.settings.FIREBASE_API_KEY}
         payload = {
             "postBody": f"id_token={google_id_token}&providerId=google.com",
-            "requestUri": "http://localhost",
+            "requestUri": self._build_google_firebase_request_uri(),
             "returnSecureToken": True,
         }
         
@@ -614,6 +614,27 @@ class AuthService:
             raise
         except Exception as e:
             raise NetworkError(f"Error de conexion con Google: {e}")
+
+    def _build_google_firebase_request_uri(self) -> str:
+        """
+        Firebase valida el requestUri contra dominios autorizados.
+        Evitar localhost fijo fuera del flujo local de escritorio.
+        """
+        redirect_uri = (self.settings.GOOGLE_OAUTH_REDIRECT_URI or "").strip()
+        if redirect_uri:
+            parsed = urlparse(redirect_uri)
+            if parsed.scheme and parsed.netloc:
+                return redirect_uri
+
+        auth_domain = (self.settings.FIREBASE_AUTH_DOMAIN or "").strip()
+        if auth_domain:
+            if auth_domain.startswith(("http://", "https://")):
+                base = auth_domain.rstrip("/")
+            else:
+                base = f"https://{auth_domain.rstrip('/')}"
+            return f"{base}/__/auth/handler"
+
+        return "http://localhost"
 
     @staticmethod
     def _extract_tokens(response: Dict[str, Any], email: str) -> AuthTokens:
