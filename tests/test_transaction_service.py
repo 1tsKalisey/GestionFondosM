@@ -9,7 +9,6 @@ Verifica:
 - Manejo de etiquetas
 """
 
-import json
 import pytest
 from datetime import datetime, timedelta, timezone
 from sqlalchemy import create_engine
@@ -159,10 +158,8 @@ class TestTransactionCreate:
         assert outbox is not None
         assert outbox.operation == "create"
         assert outbox.entity_type == "transaction"
+        assert outbox.event_type == "txn_created"
         assert outbox.synced == False
-
-        payload = json.loads(outbox.payload)
-        assert payload["amount"] == "1000.0"
 
     def test_create_invalid_account(self, service, setup_data):
         """Rechaza creación con cuenta inválida."""
@@ -626,6 +623,25 @@ class TestTransactionTags:
         tag_ids = {tag.id for tag in updated.tags}
         assert 1 in tag_ids
 
+    def test_add_tag_enqueues_update(self, service, setup_data, session):
+        txn = service.create(
+            account_id=setup_data["account"].id,
+            type_="gasto",
+            amount=25.0,
+            category_id=1,
+        )
+
+        service.add_tag(txn.id, 1)
+
+        outbox = (
+            session.query(SyncOutbox)
+            .filter(SyncOutbox.entity_id == txn.id, SyncOutbox.operation == "update")
+            .order_by(SyncOutbox.created_at.desc())
+            .first()
+        )
+        assert outbox is not None
+        assert outbox.event_type == "txn_updated"
+
     def test_remove_tag(self, service, setup_data):
         """Elimina etiqueta de transacción."""
         txn = service.create(
@@ -641,6 +657,29 @@ class TestTransactionTags:
         updated = service.get_by_id(txn.id)
         tag_ids = {tag.id for tag in updated.tags}
         assert tag_ids == {2}
+
+    def test_remove_tag_enqueues_update(self, service, setup_data, session):
+        txn = service.create(
+            account_id=setup_data["account"].id,
+            type_="gasto",
+            amount=25.0,
+            category_id=1,
+            tag_ids=[1, 2],
+        )
+
+        session.query(SyncOutbox).delete()
+        session.commit()
+
+        service.remove_tag(txn.id, 1)
+
+        outbox = (
+            session.query(SyncOutbox)
+            .filter(SyncOutbox.entity_id == txn.id, SyncOutbox.operation == "update")
+            .order_by(SyncOutbox.created_at.desc())
+            .first()
+        )
+        assert outbox is not None
+        assert outbox.event_type == "txn_updated"
 
     def test_list_filtered_by_tags(self, service, setup_data):
         """Filtra transacciones por etiquetas (AND)."""

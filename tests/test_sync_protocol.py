@@ -149,6 +149,38 @@ class TestSyncProtocol:
         assert kwargs["event_type"] == "category_created"
 
     @pytest.mark.asyncio
+    async def test_push_outbox_infers_categorization_rule_event_type_when_missing(
+        self, session_factory, firestore_client_mock
+    ):
+        protocol = SyncProtocol(
+            session_factory=session_factory,
+            firestore_client=firestore_client_mock,
+            device_id="device-1",
+            user_uid="user-uid-1",
+        )
+
+        session = session_factory()
+        outbox = SyncOutbox(
+            id=generate_uuid(),
+            entity_type="categorization_rule",
+            operation="update",
+            entity_id="rule-1",
+            payload=json.dumps({"id": "rule-1", "merchant_keyword": "ikea", "category_id": 1}),
+            created_at=datetime.utcnow(),
+            synced=False,
+            event_type=None,
+        )
+        session.add(outbox)
+        session.commit()
+        session.close()
+
+        pushed = await protocol.push_outbox()
+
+        assert pushed == 1
+        kwargs = firestore_client_mock.create_event.await_args.kwargs
+        assert kwargs["event_type"] == "categorization_rule_updated"
+
+    @pytest.mark.asyncio
     async def test_pull_and_apply_forces_one_time_full_replay(
         self, session_factory, firestore_client_mock
     ):

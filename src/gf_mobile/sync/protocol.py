@@ -12,6 +12,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from sqlalchemy.orm import Session
 
+from gf_mobile.core.sync_events import resolve_event_type
 from gf_mobile.core.exceptions import SyncError
 from gf_mobile.persistence.models import Account, AppliedEvent, SyncOutbox, SyncState, Transaction
 from gf_mobile.sync.firestore_client import FirestoreClient
@@ -219,28 +220,7 @@ class SyncProtocol:
     def _resolve_event_type(self, item: SyncOutbox) -> str:
         if item.event_type:
             return item.event_type
-
-        mapping = {
-            ("transaction", "create"): "txn_created",
-            ("transaction", "update"): "txn_updated",
-            ("transaction", "delete"): "txn_deleted",
-            ("budget", "create"): "budget_created",
-            ("budget", "update"): "budget_updated",
-            ("budget", "delete"): "budget_deleted",
-            ("category", "create"): "category_created",
-            ("category", "update"): "category_updated",
-            ("category", "delete"): "category_deleted",
-            ("recurring", "create"): "recurring_created",
-            ("recurring", "update"): "recurring_updated",
-            ("recurring", "delete"): "recurring_deleted",
-            ("alert", "create"): "alert_created",
-            ("alert", "update"): "alert_updated",
-            ("alert", "delete"): "alert_deleted",
-            ("savings_goal", "create"): "goal_created",
-            ("savings_goal", "update"): "goal_updated",
-            ("savings_goal", "delete"): "goal_deleted",
-        }
-        return mapping.get((item.entity_type, item.operation), "txn_updated")
+        return resolve_event_type(item.entity_type, item.operation)
 
     async def refresh_base_snapshot(self) -> Dict[str, int]:
         """

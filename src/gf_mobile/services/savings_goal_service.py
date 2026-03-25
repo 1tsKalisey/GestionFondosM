@@ -1,21 +1,23 @@
 """
-SavingsGoalService: Gestión de objetivos de ahorro
+SavingsGoalService: gestion de objetivos de ahorro.
 """
 
-import json
-from datetime import datetime, timezone
-from typing import List, Optional, Dict, Any
-from sqlalchemy.orm import Session
-from sqlalchemy import and_
+from __future__ import annotations
 
-from gf_mobile.persistence.models import SavingsGoal, SyncOutbox, generate_uuid
+from datetime import datetime, timezone
+from typing import Any, Dict, List, Optional
+
+from sqlalchemy.orm import Session
+
+from gf_mobile.persistence.models import SavingsGoal
+from gf_mobile.services.sync_outbox import enqueue_sync_outbox, list_pending_sync_outbox, mark_outbox_synced
 
 
 class SavingsGoalService:
     """
     Gestiona objetivos de ahorro con seguimiento de progreso e hitos.
-    
-    Patrón: Valida entrada → crea/actualiza ORM → flush() → enqueue SyncOutbox → commit()
+
+    Patron: valida entrada -> muta ORM -> flush() -> enqueue SyncOutbox -> commit().
     """
 
     def __init__(self, session: Session):
@@ -30,10 +32,7 @@ class SavingsGoalService:
         deadline: Optional[datetime] = None,
         category_id: Optional[int] = None,
     ) -> SavingsGoal:
-        """Crea un nuevo objetivo de ahorro."""
         self._validate_input(name, target_amount, current_amount)
-
-        # Auto-marcar como logrado si current >= target
         achieved = current_amount >= target_amount
 
         goal = SavingsGoal(
@@ -44,17 +43,13 @@ class SavingsGoalService:
             deadline=deadline,
             category_id=category_id,
             achieved=achieved,
+            synced=False,
             created_at=datetime.now(timezone.utc),
             updated_at=datetime.now(timezone.utc),
         )
         self.session.add(goal)
         self.session.flush()
-
-        self._enqueue_sync(
-            goal_id=goal.id,
-            operation="create",
-            payload=self._serialize_goal(goal),
-        )
+        self._enqueue_sync(goal_id=goal.id, operation="create", payload=self._serialize_goal(goal))
         self.session.commit()
         return goal
 
@@ -67,7 +62,6 @@ class SavingsGoalService:
         deadline: Optional[datetime] = None,
         achieved: Optional[bool] = None,
     ) -> SavingsGoal:
-        """Actualiza un objetivo de ahorro."""
         goal = self.session.query(SavingsGoal).filter(SavingsGoal.id == goal_id).first()
         if not goal:
             raise ValueError(f"Goal {goal_id} not found")
@@ -85,7 +79,6 @@ class SavingsGoalService:
             if current_amount < 0:
                 raise ValueError("current_amount cannot be negative")
             goal.current_amount = current_amount
-            # Auto-marcar como logrado si se alcanza el objetivo
             if current_amount >= goal.target_amount:
                 goal.achieved = True
             updated = True
@@ -98,54 +91,40 @@ class SavingsGoalService:
 
         if updated:
             goal.updated_at = datetime.now(timezone.utc)
+            goal.synced = False
             self.session.flush()
-
-            self._enqueue_sync(
-                goal_id=goal.id,
-                operation="update",
-                payload=self._serialize_goal(goal),
-            )
+            self._enqueue_sync(goal_id=goal.id, operation="update", payload=self._serialize_goal(goal))
             self.session.commit()
 
         return goal
 
     def delete_goal(self, goal_id: str) -> bool:
-        """Elimina un objetivo de ahorro."""
         goal = self.session.query(SavingsGoal).filter(SavingsGoal.id == goal_id).first()
         if not goal:
             return False
 
         self.session.delete(goal)
         self.session.flush()
-
-        self._enqueue_sync(
-            goal_id=goal_id,
-            operation="delete",
-            payload={"id": goal_id},
-        )
+        self._enqueue_sync(goal_id=goal_id, operation="delete", payload={"id": goal_id})
         self.session.commit()
         return True
 
     def get_goal(self, goal_id: str) -> Optional[SavingsGoal]:
-        """Obtiene un objetivo por ID."""
         return self.session.query(SavingsGoal).filter(SavingsGoal.id == goal_id).first()
 
     def list_goals(self, achieved: Optional[bool] = None, limit: int = 100) -> List[SavingsGoal]:
-        """Lista objetivos, opcionalmente filtrados por estado logrado."""
         query = self.session.query(SavingsGoal)
         if achieved is not None:
             query = query.filter(SavingsGoal.achieved == achieved)
         return query.limit(limit).all()
 
     def get_progress(self, goal_id: str) -> Dict[str, Any]:
-        """Retorna el progreso de un objetivo (porcentaje, monto faltante, etc)."""
         goal = self.get_goal(goal_id)
         if not goal:
             raise ValueError(f"Goal {goal_id} not found")
 
         percentage = (goal.current_amount / goal.target_amount * 100) if goal.target_amount > 0 else 0
         remaining = max(0, goal.target_amount - goal.current_amount)
-
         return {
             "goal_id": goal.id,
             "name": goal.name,
@@ -158,7 +137,6 @@ class SavingsGoalService:
         }
 
     def add_contribution(self, goal_id: str, amount: float) -> SavingsGoal:
-        """Suma una contribución al objetivo y actualiza estado."""
         if amount <= 0:
             raise ValueError("Contribution amount must be > 0")
 
@@ -167,32 +145,18 @@ class SavingsGoalService:
             raise ValueError(f"Goal {goal_id} not found")
 
         goal.current_amount += amount
+        goal.updated_at = datetime.now(timezone.utc)
+        goal.synced = False
         if goal.current_amount >= goal.target_amount:
             goal.achieved = True
-
-            goal.updated_at = datetime.now(timezone.utc)
         self.session.flush()
 
-        self._enqueue_sync(
-            goal_id=goal.id,
-            operation="update",
-            payload=self._serialize_goal(goal),
-        )
+        self._enqueue_sync(goal_id=goal.id, operation="update", payload=self._serialize_goal(goal))
         self.session.commit()
         return goal
 
     def list_pending_sync(self) -> List[Dict[str, Any]]:
-        """Retorna objetivos pendientes de sincronización."""
-        outbox_items = (
-            self.session.query(SyncOutbox)
-            .filter(
-                and_(
-                    SyncOutbox.entity_type == "savings_goal",
-                    SyncOutbox.synced == False,
-                )
-            )
-            .all()
-        )
+        outbox_items = list_pending_sync_outbox(self.session, "savings_goal")
         return [
             {
                 "id": item.id,
@@ -205,30 +169,21 @@ class SavingsGoalService:
         ]
 
     def mark_synced(self, outbox_id: int) -> None:
-        """Marca un elemento del outbox como sincronizado."""
-        outbox = self.session.query(SyncOutbox).filter(SyncOutbox.id == outbox_id).first()
-        if outbox:
-            outbox.synced = True
-            outbox.sync_error = None
+        if mark_outbox_synced(self.session, outbox_id):
             self.session.commit()
 
-    # ==================== Métodos privados ====================
-
     def _validate_input(self, name: str, target_amount: float, current_amount: float) -> None:
-        """Valida parámetros de entrada."""
         if not name or not isinstance(name, str):
             raise ValueError("name must be non-empty string")
-
         if not isinstance(target_amount, (int, float)) or target_amount <= 0:
             raise ValueError("target_amount must be numeric and > 0")
-
         if not isinstance(current_amount, (int, float)) or current_amount < 0:
             raise ValueError("current_amount must be numeric and >= 0")
 
     def _serialize_goal(self, goal: SavingsGoal) -> Dict[str, Any]:
-        """Serializa un objetivo para SyncOutbox."""
         return {
             "id": goal.id,
+            "user_id": goal.user_id,
             "name": goal.name,
             "target_amount": goal.target_amount,
             "current_amount": goal.current_amount,
@@ -240,17 +195,11 @@ class SavingsGoalService:
             "server_id": goal.server_id,
         }
 
-    def _enqueue_sync(
-        self, goal_id: str, operation: str, payload: Dict[str, Any]
-    ) -> None:
-        """Encola un cambio de objetivo para sincronización."""
-        outbox = SyncOutbox(
-            id=generate_uuid(),
+    def _enqueue_sync(self, goal_id: str, operation: str, payload: Dict[str, Any]) -> None:
+        enqueue_sync_outbox(
+            self.session,
             entity_type="savings_goal",
-            entity_id=goal_id,
             operation=operation,
-            payload=json.dumps(payload),
-            synced=False,
-            created_at=datetime.now(timezone.utc),
+            entity_id=goal_id,
+            payload=payload,
         )
-        self.session.add(outbox)

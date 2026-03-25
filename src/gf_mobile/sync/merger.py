@@ -12,12 +12,14 @@ from typing import Any, Dict, Iterable, Optional, Tuple
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
+from gf_mobile.core.sync_events import resolve_event_type
 from gf_mobile.core.exceptions import SyncError
 from gf_mobile.core.transaction_types import normalize_transaction_type
 from gf_mobile.persistence.models import (
     Account,
     Alert,
     Budget,
+    CategorizationRule,
     Category,
     RecurringTransaction,
     SubCategory,
@@ -59,27 +61,9 @@ class MergerService:
         legacy_entity_type = event.get("entity_type")
         legacy_operation = event.get("operation")
         if not event_type and legacy_entity_type and legacy_operation:
-            mapping = {
-                ("transaction", "create"): "txn_created",
-                ("transaction", "update"): "txn_updated",
-                ("transaction", "delete"): "txn_deleted",
-                ("budget", "create"): "budget_created",
-                ("budget", "update"): "budget_updated",
-                ("budget", "delete"): "budget_deleted",
-                ("recurring", "create"): "recurring_created",
-                ("recurring", "update"): "recurring_updated",
-                ("recurring", "delete"): "recurring_deleted",
-                ("alert", "create"): "alert_created",
-                ("alert", "update"): "alert_updated",
-                ("alert", "delete"): "alert_deleted",
-                ("goal", "create"): "goal_created",
-                ("goal", "update"): "goal_updated",
-                ("goal", "delete"): "goal_deleted",
-                ("account", "create"): "account_created",
-                ("account", "update"): "account_updated",
-                ("account", "delete"): "account_deleted",
-            }
-            event_type = mapping.get((legacy_entity_type, legacy_operation))
+            if legacy_entity_type == "goal":
+                legacy_entity_type = "savings_goal"
+            event_type = resolve_event_type(legacy_entity_type, legacy_operation)
         payload = event.get("payload") or {}
 
         # Transactions
@@ -128,6 +112,17 @@ class MergerService:
             if event_type == "goal_created":
                 operation = "create"
             self._merge_savings_goal(session, operation, payload)
+            return
+
+        if event_type in {
+            "categorization_rule_created",
+            "categorization_rule_updated",
+            "categorization_rule_deleted",
+        }:
+            operation = "delete" if event_type == "categorization_rule_deleted" else "update"
+            if event_type == "categorization_rule_created":
+                operation = "create"
+            self._merge_categorization_rule(session, operation, payload)
             return
 
         # Accounts
@@ -649,4 +644,50 @@ class MergerService:
             if "deadline" in payload:
                 existing.deadline = self._parse_dt(payload["deadline"]) if payload["deadline"] else None
             existing.synced = True
+
+    def _merge_categorization_rule(
+        self, session: Session, operation: str, payload: Dict[str, Any]
+    ) -> None:
+        rule_id = payload.get("id")
+        if not rule_id:
+            return
+        if operation == "delete":
+            existing = session.query(CategorizationRule).filter(CategorizationRule.id == str(rule_id)).first()
+            if existing:
+                session.delete(existing)
+            return
+
+        category = None
+        raw_category_id = payload.get("category_id")
+        if isinstance(raw_category_id, int):
+            category = session.query(Category).filter(Category.id == raw_category_id).first()
+        if not category and payload.get("category_name"):
+            category = session.query(Category).filter(
+                func.lower(func.trim(Category.name)) == str(payload["category_name"]).strip().lower()
+            ).first()
+        if not category:
+            category = self._ensure_category(session, raw_category_id, payload.get("category_name"))
+        if not category:
+            return
+
+        existing = session.query(CategorizationRule).filter(CategorizationRule.id == str(rule_id)).first()
+        if not existing:
+            existing = CategorizationRule(
+                id=str(rule_id),
+                merchant_keyword=payload.get("merchant_keyword") or "",
+                category_id=category.id,
+            )
+            session.add(existing)
+
+        if payload.get("merchant_keyword"):
+            existing.merchant_keyword = payload["merchant_keyword"]
+        existing.category_id = category.id
+        if "confidence" in payload and payload["confidence"] is not None:
+            existing.confidence = float(payload["confidence"])
+        if "user_defined" in payload:
+            existing.user_defined = bool(payload["user_defined"])
+        if payload.get("created_at"):
+            existing.created_at = self._parse_dt(payload["created_at"])
+        if payload.get("updated_at"):
+            existing.updated_at = self._parse_dt(payload["updated_at"])
 

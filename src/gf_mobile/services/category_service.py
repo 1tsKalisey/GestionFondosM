@@ -6,7 +6,6 @@ Gestiona las categorias de transacciones alineado con el ORM actual.
 
 from __future__ import annotations
 
-import json
 from datetime import datetime, timezone
 from typing import Optional
 
@@ -14,7 +13,8 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from gf_mobile.core.exceptions import DatabaseError, ValidationError
-from gf_mobile.persistence.models import Category, SyncOutbox, generate_uuid
+from gf_mobile.persistence.models import Category
+from gf_mobile.services.sync_outbox import enqueue_sync_outbox
 
 
 class CategoryInput:
@@ -179,19 +179,10 @@ class CategoryService:
         entity_id: str,
         payload: dict,
     ) -> None:
-        event_type = "category_updated"
-        if operation == "create":
-            event_type = "category_created"
-        elif operation == "delete":
-            event_type = "category_deleted"
-        outbox = SyncOutbox(
-            id=generate_uuid(),
+        enqueue_sync_outbox(
+            self.session,
             entity_type=entity_type,
             operation=operation,
-            event_type=event_type,
             entity_id=entity_id,
-            payload=json.dumps(payload),
-            created_at=datetime.now(timezone.utc),
-            synced=False,
+            payload=payload,
         )
-        self.session.add(outbox)

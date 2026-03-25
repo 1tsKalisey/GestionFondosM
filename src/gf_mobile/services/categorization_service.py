@@ -2,7 +2,6 @@
 CategorizationService: Categorización automática de transacciones basada en ML simple
 """
 
-import json
 from datetime import datetime, timezone
 from typing import List, Optional, Dict, Any, Tuple
 from sqlalchemy.orm import Session
@@ -11,11 +10,9 @@ from sqlalchemy import and_, func
 from gf_mobile.persistence.models import (
     Transaction,
     Category,
-    SubCategory,
     CategorizationRule,
-    SyncOutbox,
-    generate_uuid,
 )
+from gf_mobile.services.sync_outbox import enqueue_sync_outbox, list_pending_sync_outbox, mark_outbox_synced
 
 
 class CategorizationService:
@@ -195,16 +192,7 @@ class CategorizationService:
 
     def list_pending_sync(self) -> List[Dict[str, Any]]:
         """Retorna reglas pendientes de sincronización."""
-        outbox_items = (
-            self.session.query(SyncOutbox)
-            .filter(
-                and_(
-                    SyncOutbox.entity_type == "categorization_rule",
-                    SyncOutbox.synced == False,
-                )
-            )
-            .all()
-        )
+        outbox_items = list_pending_sync_outbox(self.session, "categorization_rule")
         return [
             {
                 "id": item.id,
@@ -218,10 +206,7 @@ class CategorizationService:
 
     def mark_synced(self, outbox_id: int) -> None:
         """Marca un elemento del outbox como sincronizado."""
-        outbox = self.session.query(SyncOutbox).filter(SyncOutbox.id == outbox_id).first()
-        if outbox:
-            outbox.synced = True
-            outbox.sync_error = None
+        if mark_outbox_synced(self.session, outbox_id):
             self.session.commit()
 
     # ==================== Métodos privados ====================
@@ -246,10 +231,12 @@ class CategorizationService:
 
     def _serialize_rule(self, rule: CategorizationRule) -> Dict[str, Any]:
         """Serializa una regla para SyncOutbox."""
+        category = self.session.query(Category).filter(Category.id == rule.category_id).first()
         return {
             "id": rule.id,
             "merchant_keyword": rule.merchant_keyword,
             "category_id": rule.category_id,
+            "category_name": category.name if category else None,
             "confidence": rule.confidence,
             "user_defined": rule.user_defined,
             "created_at": self._format_timestamp(rule.created_at),
@@ -273,13 +260,10 @@ class CategorizationService:
         self, rule_id: str, operation: str, payload: Dict[str, Any]
     ) -> None:
         """Encola un cambio de regla para sincronización."""
-        outbox = SyncOutbox(
-            id=generate_uuid(),
+        enqueue_sync_outbox(
+            self.session,
             entity_type="categorization_rule",
-            entity_id=rule_id,
             operation=operation,
-            payload=json.dumps(payload),
-            synced=False,
-            created_at=datetime.now(timezone.utc),
+            entity_id=rule_id,
+            payload=payload,
         )
-        self.session.add(outbox)

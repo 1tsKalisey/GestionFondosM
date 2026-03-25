@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session
 
 from gf_mobile.core.exceptions import ValidationError, DatabaseError
 from gf_mobile.persistence.models import Budget, Transaction, Alert, SyncOutbox, Category, generate_uuid
+from gf_mobile.services.sync_outbox import enqueue_sync_outbox
 
 
 class BudgetInput:
@@ -249,20 +250,10 @@ class BudgetService:
         }
 
     def _enqueue_sync(self, entity_type: str, operation: str, entity_id: str, payload: dict) -> None:
-        event_type = "budget_updated"
-        if operation == "create":
-            event_type = "budget_created"
-        elif operation == "delete":
-            event_type = "budget_deleted"
-        outbox = SyncOutbox(
-            id=generate_uuid(),
+        enqueue_sync_outbox(
+            self.session,
             entity_type=entity_type,
             operation=operation,
-            event_type=event_type,
             entity_id=entity_id,
-            payload=json.dumps(payload),
-            created_at=datetime.utcnow(),
-            synced=False,
-            sync_error=None,
+            payload=payload,
         )
-        self.session.add(outbox)

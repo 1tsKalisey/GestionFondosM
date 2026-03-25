@@ -12,10 +12,8 @@ Responsabilidades:
 - Manejo de transacciones recurrentes base
 """
 
-import json
 from datetime import datetime, timezone
 from typing import Optional, List, Dict, Any
-from uuid import UUID
 
 from sqlalchemy import and_, or_, desc, func
 from sqlalchemy.orm import Session
@@ -32,6 +30,7 @@ from gf_mobile.persistence.models import (
     SyncOutbox,
     generate_uuid,
 )
+from gf_mobile.services.sync_outbox import enqueue_sync_outbox
 
 
 class TransactionService:
@@ -506,6 +505,13 @@ class TransactionService:
                 tx_tag = TransactionTag(transaction_id=transaction_id, tag_id=tag_id)
                 self.session.add(tx_tag)
                 transaction.synced = False
+                self.session.flush()
+                self._enqueue_sync(
+                    entity_type="transaction",
+                    operation="update",
+                    entity_id=transaction.id,
+                    payload=self._serialize_transaction(transaction),
+                )
                 self.session.commit()
 
         except ValidationError:
@@ -532,6 +538,13 @@ class TransactionService:
                 transaction = self.get_by_id(transaction_id)
                 if transaction:
                     transaction.synced = False
+                    self.session.flush()
+                    self._enqueue_sync(
+                        entity_type="transaction",
+                        operation="update",
+                        entity_id=transaction.id,
+                        payload=self._serialize_transaction(transaction),
+                    )
 
                 self.session.commit()
 
@@ -709,20 +722,10 @@ class TransactionService:
         payload: Dict[str, Any],
     ) -> None:
         """Encolada cambio en SyncOutbox."""
-        event_type = "txn_updated"
-        if operation == "create":
-            event_type = "txn_created"
-        elif operation == "delete":
-            event_type = "txn_deleted"
-        outbox = SyncOutbox(
-            id=generate_uuid(),
+        enqueue_sync_outbox(
+            self.session,
             entity_type=entity_type,
             operation=operation,
-            event_type=event_type,
             entity_id=entity_id,
-            payload=json.dumps(payload),
-            created_at=datetime.now(timezone.utc),
-            synced=False,
-            sync_error=None,
+            payload=payload,
         )
-        self.session.add(outbox)
