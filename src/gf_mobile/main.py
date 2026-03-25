@@ -416,6 +416,40 @@ class GestionFondosMApp(MDApp):
         )
         self._set_sync_state_value(key, "" if category_id is None else str(int(category_id)))
 
+    def get_quick_entry_options(self) -> dict[str, list[dict[str, object]]]:
+        """Lee cuentas y categorias con una sesion corta para evitar objetos stale en UI."""
+        if not self.session_factory:
+            return {"accounts": [], "categories": []}
+
+        from gf_mobile.persistence.models import Account, Category
+
+        session = self.session_factory()
+        try:
+            accounts = (
+                session.query(Account)
+                .order_by(Account.name.asc())
+                .all()
+            )
+            categories = (
+                session.query(Category)
+                .order_by(Category.name.asc())
+                .all()
+            )
+            return {
+                "accounts": [
+                    {"id": account.id, "name": account.name}
+                    for account in accounts
+                    if getattr(account, "name", None)
+                ],
+                "categories": [
+                    {"id": category.id, "name": category.name}
+                    for category in categories
+                    if getattr(category, "name", None)
+                ],
+            }
+        finally:
+            session.close()
+
     def logout_user(self) -> None:
         try:
             if self.auth_service:

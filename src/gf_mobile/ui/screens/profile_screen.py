@@ -213,22 +213,24 @@ class ProfileScreen(Screen):
 
     def _refresh_quick_defaults(self) -> None:
         app = App.get_running_app()
-        session = getattr(app, "app_session", None) if app else None
         self._account_map = {}
         self._category_map = {}
-        if not session or not app:
+        if not app or not hasattr(app, "get_quick_entry_options"):
             self.quick_account_text = "Cuenta rapida: automatico"
             self.quick_income_category_text = "Categoria ingreso: automatica"
             self.quick_expense_category_text = "Categoria gasto: automatica"
             return
 
-        from gf_mobile.persistence.models import Account, Category
-
-        accounts = session.query(Account).order_by(Account.name.asc()).all()
-        categories = session.query(Category).order_by(Category.name.asc()).all()
-        self._account_map = {account.name: account.id for account in accounts if getattr(account, "name", None)}
+        options = app.get_quick_entry_options()
+        self._account_map = {
+            str(item["name"]): str(item["id"])
+            for item in options.get("accounts", [])
+            if item.get("name")
+        }
         self._category_map = {
-            category.name: category.id for category in categories if getattr(category, "name", None)
+            str(item["name"]): int(item["id"])
+            for item in options.get("categories", [])
+            if item.get("name") and item.get("id") is not None
         }
 
         account_id = app.get_quick_entry_default_account_id() if hasattr(app, "get_quick_entry_default_account_id") else ""

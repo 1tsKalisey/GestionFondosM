@@ -1,77 +1,94 @@
-# Byte-compiled / optimized / DLL files
+# Python bytecode and caches
 __pycache__/
 *.py[cod]
 *$py.class
-/.venv
-/.test_runtime
-# C extensions
-*.so
+*.pyo
+*.pyd
 
-# Distribution / packaging
+# Virtual environments
+/.venv/
+/venv/
+/env/
+
+# Local runtime and test artifacts
+/.test_runtime/
+/.tmp_test/
+pytest-cache-files-*/
+/.pytest_cache/
+/.hypothesis/
+/.coverage
+/.coverage.*
+/coverage.xml
+/htmlcov/
+
+# Type checkers, linters and tooling caches
+/.mypy_cache/
+/.ruff_cache/
+/.pyre/
+/.dmypy.json
+/.nox/
+/.tox/
+/.cache/
+
+# Build and packaging
 .Python
-build/
-develop-eggs/
-dist/
-downloads/
-eggs/
-.eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-wheels/
-pip-wheel-metadata/
-share/python-wheels/
+/build/
+/dist/
+/develop-eggs/
+/downloads/
+/eggs/
+/.eggs/
+/lib/
+/lib64/
+/parts/
+/sdist/
+/var/
+/wheels/
+/pip-wheel-metadata/
+/share/python-wheels/
 *.egg-info/
-.installed.cfg
 *.egg
+.installed.cfg
 MANIFEST
 
-# PyInstaller
+# Native / bundling outputs
+*.so
 *.manifest
 *.spec
+*.apk
+*.aab
+.buildozer/
+/bin/
+/libs/
 
-# Unit test / coverage reports
-htmlcov/
-.tox/
-.nox/
-.coverage
-.coverage.*
-.cache
-nosetests.xml
-coverage.xml
-*.cover
-*.py,cover
-.hypothesis/
-.pytest_cache/
+# Databases and local app state
+*.db
+*.db-journal
+*.sqlite
+*.sqlite3
+*.sqlite-shm
+*.sqlite-wal
 
-# Buildozer
-.buildozer
-bin/
-libs/
+# Environment files and secrets
+.env
+.env.*
+!.env.example
+app.env
+src/app.env
 
-# IDE
+# Kivy / KivyMD local state
+.kivy/
+logs/
+
+# Node and frontend tool outputs
+/node_modules/
+
+# Editors and OS files
 .vscode/
 .idea/
 *.swp
 *.swo
 *~
 .DS_Store
-
-# Environment
-.env
-.env.local
-app.env
-src/app.env
-venv/
-env/
-
-# Project specific
-*.apk
-*.aab
-
-# Local temp folders/files
-.tmp_test/
-pytest-cache-files-*/
-node_modules/
+Thumbs.db
+desktop.ini
