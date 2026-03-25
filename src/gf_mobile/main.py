@@ -450,6 +450,85 @@ class GestionFondosMApp(MDApp):
         finally:
             session.close()
 
+    def get_pending_sync_count(self) -> int:
+        """Cuenta elementos pendientes de outbox con sesion corta."""
+        if not self.session_factory:
+            return 0
+
+        from gf_mobile.persistence.models import SyncOutbox
+
+        session = self.session_factory()
+        try:
+            return int(session.query(SyncOutbox).filter(SyncOutbox.synced == False).count())
+        finally:
+            session.close()
+
+    def _ensure_local_user(self, session, user_uid: str):
+        from gf_mobile.persistence.models import User, Account, Category
+
+        local_user = session.query(User).first()
+        if not local_user:
+            local_user = User(name="Usuario", server_uid=user_uid)
+            session.add(local_user)
+            session.flush()
+            session.add_all(
+                [
+                    Account(
+                        user_id=local_user.id,
+                        name="Efectivo",
+                        type="efectivo",
+                        currency="EUR",
+                        opening_balance=0.0,
+                    ),
+                    Category(name="General", budget_group="Otros"),
+                ]
+            )
+            session.commit()
+            print(f"Usuario local creado: {local_user.name} (ID: {local_user.id})")
+            return local_user
+
+        local_user.server_uid = user_uid
+        session.commit()
+        print(f"Usuario local actualizado: {local_user.name} (ID: {local_user.id})")
+        return local_user
+
+    def _bind_ui_services(self, session, user_id: int) -> None:
+        user_id_str = str(user_id)
+        tx_service = TransactionService(session, user_id=user_id_str)
+        cat_service = CategoryService(session, user_id=user_id_str)
+        budget_service = BudgetService(session, user_id=user_id_str)
+
+        self.transactions_screen.transaction_service = tx_service
+        self.transactions_results_screen.transaction_service = tx_service
+        self.add_transaction_screen.transaction_service = tx_service
+        self.dashboard_screen.transaction_service = tx_service
+        self.reports_screen.transaction_service = tx_service
+        self.quick_entry_screen.transaction_service = tx_service
+
+        self.categories_screen.category_service = cat_service
+        self.transactions_screen.category_service = cat_service
+        self.dashboard_screen.category_service = cat_service
+        self.reports_screen.category_service = cat_service
+
+        self.budgets_screen.budget_service = budget_service
+        self.budgets_screen.category_service = cat_service
+        self.dashboard_screen.budget_service = budget_service
+        self.reports_screen.budget_service = budget_service
+
+    def _configure_sync_services(self, session, user_uid: str) -> FirestoreClient:
+        device_id = self._get_or_create_device_id(session)
+        firestore_client = FirestoreClient(self.config_obj, self.auth_service)
+        sync_protocol = SyncProtocol(
+            session_factory=self.session_factory,
+            firestore_client=firestore_client,
+            device_id=device_id,
+            user_uid=user_uid,
+        )
+        sync_service = SimpleSyncService(sync_protocol)
+        self.sync_status_screen.sync_service = sync_service
+        self.sync_status_screen.session_factory = self.session_factory
+        return firestore_client
+
     def logout_user(self) -> None:
         try:
             if self.auth_service:
@@ -493,7 +572,18 @@ class GestionFondosMApp(MDApp):
         session = self.session_factory()
         self.app_session = session
         try:
-            from gf_mobile.persistence.models import User, Account, Category
+            local_user = self._ensure_local_user(session, user_uid)
+            self._bind_ui_services(session, local_user.id)
+            firestore_client = self._configure_sync_services(session, user_uid)
+
+            quick_enabled = self.is_quick_entry_enabled()
+            if not quick_enabled:
+                self.sm.current = "dashboard"
+            else:
+                self.sm.current = "dashboard" if just_logged_in else "quick_entry"
+
+            self._run_initial_and_incremental_sync(user_uid, firestore_client, local_user.id)
+            return
             
             # Buscar o crear usuario local
             local_user = session.query(User).first()

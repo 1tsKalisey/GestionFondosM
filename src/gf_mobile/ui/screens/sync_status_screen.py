@@ -145,9 +145,18 @@ class SyncStatusScreen(Screen):
         self.last_sync = f"Ultima sync: {now}"
 
     def update_pending_count(self) -> None:
-        if not self.session_factory:
-            return
         try:
+            from kivy.app import App
+
+            app = App.get_running_app()
+            if app and hasattr(app, "get_pending_sync_count"):
+                count = app.get_pending_sync_count()
+                self.pending_changes = f"Cambios pendientes: {count}"
+                return
+
+            if not self.session_factory:
+                return
+
             from gf_mobile.persistence.models import SyncOutbox
 
             session = self.session_factory()
