@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 from typing import Dict, Optional
 
 from kivy.app import App
+from kivy.clock import Clock
 from kivy.lang import Builder
 from kivy.properties import StringProperty
 from kivy.uix.screenmanager import Screen
@@ -258,6 +259,7 @@ class AddTransactionScreen(Screen):
                 note=note,
                 occurred_at=datetime.now(timezone.utc),
             )
+            self._refresh_related_screens()
             self._trigger_background_sync()
             self.ids.amount.text = ""
             self.ids.note.text = ""
@@ -288,6 +290,22 @@ class AddTransactionScreen(Screen):
                 print(f"[SYNC][ADD] background sync error: {exc}")
 
         threading.Thread(target=_worker, daemon=True).start()
+
+    def _refresh_related_screens(self) -> None:
+        app = App.get_running_app()
+        if not app or not hasattr(app, "sm"):
+            return
+
+        def _refresh(*_args):
+            for screen_name in ("dashboard", "transactions_results", "reports"):
+                try:
+                    screen = app.sm.get_screen(screen_name)
+                    if hasattr(screen, "refresh"):
+                        screen.refresh()
+                except Exception:
+                    continue
+
+        Clock.schedule_once(_refresh)
 
     def _show_popup(self, title: str, message: str) -> None:
         palette = resolve_palette()

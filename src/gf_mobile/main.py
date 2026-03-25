@@ -329,6 +329,34 @@ class GestionFondosMApp(MDApp):
         finally:
             session.close()
 
+    def _get_sync_state_value(self, key: str, default=None):
+        if not self.session_factory:
+            return default
+        session = self.session_factory()
+        try:
+            item = session.query(SyncState).filter(SyncState.key == key).first()
+            if not item or item.value is None:
+                return default
+            return item.value
+        except Exception:
+            return default
+        finally:
+            session.close()
+
+    def _set_sync_state_value(self, key: str, value: str) -> None:
+        if not self.session_factory:
+            return
+        session = self.session_factory()
+        try:
+            item = session.query(SyncState).filter(SyncState.key == key).first()
+            if item:
+                item.value = value
+            else:
+                session.add(SyncState(key=key, value=value))
+            session.commit()
+        finally:
+            session.close()
+
     def is_quick_entry_enabled(self) -> bool:
         if not self.session_factory:
             return True
@@ -344,34 +372,49 @@ class GestionFondosMApp(MDApp):
             session.close()
 
     def set_quick_entry_enabled(self, enabled: bool) -> None:
-        if not self.session_factory:
-            return
-        session = self.session_factory()
-        try:
-            item = session.query(SyncState).filter(SyncState.key == "quick_entry_enabled").first()
-            value = "true" if enabled else "false"
-            if item:
-                item.value = value
-            else:
-                session.add(SyncState(key="quick_entry_enabled", value=value))
-            session.commit()
-        finally:
-            session.close()
+        self._set_sync_state_value("quick_entry_enabled", "true" if enabled else "false")
 
     def save_quick_step_value(self, step_value: float) -> None:
-        if not self.session_factory:
-            return
-        session = self.session_factory()
+        self._set_sync_state_value("quick_step_value", str(float(step_value)))
+
+    def get_saved_report_range(self) -> tuple[str, str] | None:
+        start = self._get_sync_state_value("report_range_start", "")
+        end = self._get_sync_state_value("report_range_end", "")
+        if not start or not end:
+            return None
+        return str(start), str(end)
+
+    def save_report_range(self, start_value: str, end_value: str) -> None:
+        self._set_sync_state_value("report_range_start", str(start_value))
+        self._set_sync_state_value("report_range_end", str(end_value))
+
+    def get_quick_entry_default_account_id(self) -> str:
+        return str(self._get_sync_state_value("quick_entry_default_account_id", "") or "")
+
+    def set_quick_entry_default_account_id(self, account_id: str) -> None:
+        self._set_sync_state_value("quick_entry_default_account_id", str(account_id or ""))
+
+    def get_quick_entry_default_category_id(self, tx_type: str) -> int | None:
+        key = (
+            "quick_entry_income_category_id"
+            if str(tx_type).strip().lower() == "ingreso"
+            else "quick_entry_expense_category_id"
+        )
+        value = self._get_sync_state_value(key, "")
+        if value in (None, ""):
+            return None
         try:
-            item = session.query(SyncState).filter(SyncState.key == "quick_step_value").first()
-            value = str(float(step_value))
-            if item:
-                item.value = value
-            else:
-                session.add(SyncState(key="quick_step_value", value=value))
-            session.commit()
-        finally:
-            session.close()
+            return int(value)
+        except (TypeError, ValueError):
+            return None
+
+    def set_quick_entry_default_category_id(self, tx_type: str, category_id: int | None) -> None:
+        key = (
+            "quick_entry_income_category_id"
+            if str(tx_type).strip().lower() == "ingreso"
+            else "quick_entry_expense_category_id"
+        )
+        self._set_sync_state_value(key, "" if category_id is None else str(int(category_id)))
 
     def logout_user(self) -> None:
         try:
@@ -395,6 +438,15 @@ class GestionFondosMApp(MDApp):
             self.app_session = None
 
         self.sm.current = "login"
+
+    def refresh_ui_session_state(self) -> None:
+        """Expira la sesion larga de UI para evitar objetos stale tras sync externa."""
+        if self.app_session is None:
+            return
+        try:
+            self.app_session.expire_all()
+        except Exception:
+            pass
 
     def on_login_success(self, user_uid: str, just_logged_in: bool = True) -> None:
         """Callback cuando el login es exitoso"""
