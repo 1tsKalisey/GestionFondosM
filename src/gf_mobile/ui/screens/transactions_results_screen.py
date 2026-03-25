@@ -58,7 +58,7 @@ Builder.load_string(
                 MDRaisedButton:
                     text: "+ Nuevo"
                     md_bg_color: app.kivy_palette["primary"]
-                    on_release: root.manager.current = "add_transaction"
+                    on_release: root.open_new_transaction()
 
         ScrollView:
             MDBoxLayout:
@@ -126,6 +126,18 @@ class TransactionsResultsScreen(Screen):
         except Exception as exc:
             self.status_message = self._short_error(exc)
             self.results_headline = "Consulta no disponible"
+
+    def open_new_transaction(self) -> None:
+        try:
+            add_screen = self.manager.get_screen("add_transaction")
+            if hasattr(add_screen, "prepare_for_entry"):
+                add_screen.prepare_for_entry(
+                    tx_type="gasto",
+                    origin_screen="transactions_results",
+                )
+            self.manager.current = "add_transaction"
+        except Exception as exc:
+            self.status_message = self._short_error(exc)
 
     def _build_empty_card(self) -> MDCard:
         card = EmptyStateCard(

@@ -2,12 +2,16 @@
 Profile screen.
 """
 
+from typing import Optional
+
 from kivy.app import App
 from kivy.lang import Builder
 from kivy.properties import BooleanProperty, ListProperty, StringProperty
 from kivy.uix.screenmanager import Screen
+from kivymd.uix.dialog import MDDialog
 
 from gf_mobile.core.session_manager import SessionManager
+from gf_mobile.ui.dialogs import build_selection_dialog
 from gf_mobile.ui.navigation import NavigationBar
 from gf_mobile.ui.screen_utils import apply_palette_attrs
 from gf_mobile.ui.widgets.shell import HeroCard, ScreenHeader, SectionCard
@@ -85,6 +89,21 @@ Builder.load_string(
                         md_bg_color: root.primary_color
                         on_release: root.save_quick_step()
 
+                    MDRaisedButton:
+                        text: root.quick_account_text
+                        md_bg_color: root.primary_color
+                        on_release: root.open_quick_account_picker()
+
+                    MDRaisedButton:
+                        text: root.quick_income_category_text
+                        md_bg_color: root.primary_color
+                        on_release: root.open_quick_income_category_picker()
+
+                    MDRaisedButton:
+                        text: root.quick_expense_category_text
+                        md_bg_color: root.primary_color
+                        on_release: root.open_quick_expense_category_picker()
+
                     MDBoxLayout:
                         size_hint_y: None
                         height: "42dp"
@@ -133,6 +152,15 @@ class ProfileScreen(Screen):
     primary_color = ListProperty([0, 0, 0, 1])
     surface_color = ListProperty([1, 1, 1, 1])
     error_color = ListProperty([0.8, 0, 0, 1])
+    quick_account_text = StringProperty("Cuenta rapida: automatico")
+    quick_income_category_text = StringProperty("Categoria ingreso: automatica")
+    quick_expense_category_text = StringProperty("Categoria gasto: automatica")
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self._dialog: Optional[MDDialog] = None
+        self._account_map: dict[str, str] = {}
+        self._category_map: dict[str, int] = {}
 
     def on_enter(self):
         if "nav_bar" in self.ids:
@@ -146,6 +174,7 @@ class ProfileScreen(Screen):
         self._refresh_theme_state()
         self._refresh_quick_values()
         self._refresh_quick_toggle()
+        self._refresh_quick_defaults()
 
     def on_kv_post(self, base_widget):
         self._apply_theme_colors()
@@ -181,6 +210,54 @@ class ProfileScreen(Screen):
             self.quick_entry_enabled = True
             return
         self.quick_entry_enabled = bool(app.is_quick_entry_enabled())
+
+    def _refresh_quick_defaults(self) -> None:
+        app = App.get_running_app()
+        self._account_map = {}
+        self._category_map = {}
+        if not app or not hasattr(app, "get_quick_entry_options"):
+            self.quick_account_text = "Cuenta rapida: automatico"
+            self.quick_income_category_text = "Categoria ingreso: automatica"
+            self.quick_expense_category_text = "Categoria gasto: automatica"
+            return
+
+        options = app.get_quick_entry_options()
+        self._account_map = {
+            str(item["name"]): str(item["id"])
+            for item in options.get("accounts", [])
+            if item.get("name")
+        }
+        self._category_map = {
+            str(item["name"]): int(item["id"])
+            for item in options.get("categories", [])
+            if item.get("name") and item.get("id") is not None
+        }
+
+        account_id = app.get_quick_entry_default_account_id() if hasattr(app, "get_quick_entry_default_account_id") else ""
+        income_category_id = (
+            app.get_quick_entry_default_category_id("ingreso")
+            if hasattr(app, "get_quick_entry_default_category_id")
+            else None
+        )
+        expense_category_id = (
+            app.get_quick_entry_default_category_id("gasto")
+            if hasattr(app, "get_quick_entry_default_category_id")
+            else None
+        )
+
+        account_name = next((name for name, value in self._account_map.items() if value == account_id), None)
+        income_name = next(
+            (name for name, value in self._category_map.items() if value == income_category_id),
+            None,
+        )
+        expense_name = next(
+            (name for name, value in self._category_map.items() if value == expense_category_id),
+            None,
+        )
+
+        self.quick_account_text = f"Cuenta rapida: {account_name or 'automatico'}"
+        self.quick_income_category_text = f"Categoria ingreso: {income_name or 'automatica'}"
+        self.quick_expense_category_text = f"Categoria gasto: {expense_name or 'automatica'}"
 
     def set_theme(self, theme_name: str) -> None:
         app = App.get_running_app()
@@ -241,6 +318,54 @@ class ProfileScreen(Screen):
         if result <= 0:
             raise ValueError("El valor debe ser positivo")
         return result
+
+    def open_quick_account_picker(self) -> None:
+        self._refresh_quick_defaults()
+        options = list(self._account_map.keys())
+        self._open_selection_dialog("Cuenta rapida", options, self._on_quick_account_selected)
+
+    def open_quick_income_category_picker(self) -> None:
+        self._refresh_quick_defaults()
+        options = list(self._category_map.keys())
+        self._open_selection_dialog("Categoria ingreso", options, self._on_quick_income_category_selected)
+
+    def open_quick_expense_category_picker(self) -> None:
+        self._refresh_quick_defaults()
+        options = list(self._category_map.keys())
+        self._open_selection_dialog("Categoria gasto", options, self._on_quick_expense_category_selected)
+
+    def _on_quick_account_selected(self, label: str) -> None:
+        app = App.get_running_app()
+        account_id = self._account_map.get(label)
+        if not app or not account_id or not hasattr(app, "set_quick_entry_default_account_id"):
+            return
+        app.set_quick_entry_default_account_id(account_id)
+        self.status_message = "Cuenta rapida guardada"
+        self._refresh_quick_defaults()
+
+    def _on_quick_income_category_selected(self, label: str) -> None:
+        self._save_quick_category("ingreso", label)
+
+    def _on_quick_expense_category_selected(self, label: str) -> None:
+        self._save_quick_category("gasto", label)
+
+    def _save_quick_category(self, tx_type: str, label: str) -> None:
+        app = App.get_running_app()
+        category_id = self._category_map.get(label)
+        if not app or category_id is None or not hasattr(app, "set_quick_entry_default_category_id"):
+            return
+        app.set_quick_entry_default_category_id(tx_type, category_id)
+        self.status_message = "Categoria rapida guardada"
+        self._refresh_quick_defaults()
+
+    def _open_selection_dialog(self, title: str, options, callback) -> None:
+        self._dialog = build_selection_dialog(
+            self._dialog,
+            title=title,
+            options=options,
+            on_select=callback,
+        )
+        self._dialog.open()
 
     def logout(self) -> None:
         app = App.get_running_app()

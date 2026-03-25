@@ -66,6 +66,7 @@ class TestRecurringService:
         assert recurring.id is not None
         outbox = session.query(SyncOutbox).filter(SyncOutbox.entity_type == "recurring").first()
         assert outbox is not None
+        assert outbox.event_type == "recurring_created"
 
     def test_generate_due_transactions(self, session, setup_data):
         service = RecurringService(session)
@@ -90,9 +91,20 @@ class TestRecurringService:
 
         tx = session.query(Transaction).filter(Transaction.recurring_id == recurring.id).first()
         assert tx is not None
+        tx_outbox = session.query(SyncOutbox).filter(SyncOutbox.entity_id == tx.id).first()
+        assert tx_outbox is not None
+        assert tx_outbox.event_type == "txn_created"
 
         updated = session.query(RecurringTransaction).filter(RecurringTransaction.id == recurring.id).first()
         assert updated.next_run > past
+        recurring_outbox = (
+            session.query(SyncOutbox)
+            .filter(SyncOutbox.entity_type == "recurring", SyncOutbox.operation == "update")
+            .order_by(SyncOutbox.created_at.desc())
+            .first()
+        )
+        assert recurring_outbox is not None
+        assert recurring_outbox.event_type == "recurring_updated"
 
     def test_generate_skips_existing(self, session, setup_data):
         service = RecurringService(session)

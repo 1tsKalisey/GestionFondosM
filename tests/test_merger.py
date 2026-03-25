@@ -12,6 +12,7 @@ from sqlalchemy.orm import sessionmaker
 from gf_mobile.persistence.models import (
     Base,
     Account,
+    CategorizationRule,
     Category,
     Tag,
     Transaction,
@@ -178,4 +179,28 @@ class TestMergerService:
         budget = session.query(Budget).filter(Budget.id == budget_id).first()
         assert budget is not None
         assert budget.amount == 300.0
+        session.close()
+
+    def test_create_categorization_rule_event(self, session_factory, setup_data):
+        merger = MergerService(session_factory)
+        rule_id = generate_uuid()
+        event = {
+            "type": "categorization_rule_created",
+            "payload": {
+                "id": rule_id,
+                "merchant_keyword": "ikea",
+                "category_id": setup_data["category_id"],
+                "category_name": "Groceries",
+                "confidence": 0.8,
+                "user_defined": True,
+            },
+        }
+
+        merger.apply_events([event])
+
+        session = session_factory()
+        rule = session.query(CategorizationRule).filter(CategorizationRule.id == rule_id).first()
+        assert rule is not None
+        assert rule.merchant_keyword == "ikea"
+        assert rule.confidence == 0.8
         session.close()

@@ -1,7 +1,9 @@
 """Sync status screen."""
 
 from datetime import datetime
+import threading
 
+from kivy.clock import Clock
 from kivy.lang import Builder
 from kivy.properties import BooleanProperty, StringProperty
 from kivy.uix.screenmanager import Screen
@@ -96,32 +98,65 @@ class SyncStatusScreen(Screen):
         self.status_message = "Sincronizando..."
         self.has_error = False
 
-        try:
-            import asyncio
+        def _worker():
+            try:
+                result = self.sync_service.sync_now_blocking(push_limit=100, pull_limit=50)
+                Clock.schedule_once(lambda *_: self._apply_sync_result(result))
+            except Exception as exc:
+                Clock.schedule_once(lambda *_: self._apply_sync_error(exc))
 
-            result = asyncio.run(self.sync_service.sync_now(push_limit=100, pull_limit=50))
-            if result.success:
-                self.status_message = f"Completado: {result.pushed} enviados, {result.pulled} recibidos"
-                self.has_error = False
-                self.update_last_sync_time()
-                self.update_pending_count()
-            else:
-                self.status_message = f"Error: {result.error}"
-                self.has_error = True
-        except Exception as exc:
-            self.status_message = f"Error: {exc}"
+        threading.Thread(target=_worker, daemon=True).start()
+
+    def _apply_sync_result(self, result) -> None:
+        if result.success:
+            self.status_message = f"Completado: {result.pushed} enviados, {result.pulled} recibidos"
+            self.has_error = False
+            self.update_last_sync_time()
+            self.update_pending_count()
+            self._refresh_related_screens()
+        else:
+            self.status_message = f"Error: {result.error}"
             self.has_error = True
-        finally:
-            self.is_syncing = False
+        self.is_syncing = False
+
+    def _apply_sync_error(self, exc: Exception) -> None:
+        self.status_message = f"Error: {exc}"
+        self.has_error = True
+        self.is_syncing = False
+
+    def _refresh_related_screens(self) -> None:
+        from kivy.app import App
+
+        app = App.get_running_app()
+        if not app:
+            return
+        if hasattr(app, "refresh_ui_session_state"):
+            app.refresh_ui_session_state()
+        for screen_name in ("dashboard", "transactions_results", "reports"):
+            try:
+                screen = app.sm.get_screen(screen_name)
+                if hasattr(screen, "refresh"):
+                    screen.refresh()
+            except Exception:
+                continue
 
     def update_last_sync_time(self) -> None:
         now = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
         self.last_sync = f"Ultima sync: {now}"
 
     def update_pending_count(self) -> None:
-        if not self.session_factory:
-            return
         try:
+            from kivy.app import App
+
+            app = App.get_running_app()
+            if app and hasattr(app, "get_pending_sync_count"):
+                count = app.get_pending_sync_count()
+                self.pending_changes = f"Cambios pendientes: {count}"
+                return
+
+            if not self.session_factory:
+                return
+
             from gf_mobile.persistence.models import SyncOutbox
 
             session = self.session_factory()

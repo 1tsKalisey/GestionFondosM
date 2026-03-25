@@ -4,7 +4,6 @@ RecurringService
 Gestiona transacciones recurrentes y generación automática.
 """
 
-import json
 from datetime import datetime, timedelta
 from typing import List, Optional, Dict, Any
 
@@ -18,9 +17,9 @@ from gf_mobile.persistence.models import (
     Transaction,
     Account,
     Category,
-    SyncOutbox,
     generate_uuid,
 )
+from gf_mobile.services.sync_outbox import enqueue_sync_outbox
 
 
 class RecurringService:
@@ -328,14 +327,10 @@ class RecurringService:
         entity_id: str,
         payload: Dict[str, Any],
     ) -> None:
-        outbox = SyncOutbox(
-            id=generate_uuid(),
+        enqueue_sync_outbox(
+            self.session,
             entity_type=entity_type,
             operation=operation,
             entity_id=entity_id,
-            payload=json.dumps(payload),
-            created_at=datetime.utcnow(),
-            synced=False,
-            sync_error=None,
+            payload=payload,
         )
-        self.session.add(outbox)

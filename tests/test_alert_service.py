@@ -43,6 +43,9 @@ class TestAlertService:
         assert alert.id is not None
         assert alert.severity == "warning"
         assert alert.is_read is False
+        outbox = session.query(SyncOutbox).filter(SyncOutbox.entity_id == alert.id).first()
+        assert outbox is not None
+        assert outbox.event_type == "alert_created"
 
     def test_update_alert_mark_read(self, session):
         service = AlertService(session)

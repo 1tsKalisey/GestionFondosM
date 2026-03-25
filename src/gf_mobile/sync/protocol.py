@@ -12,6 +12,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from sqlalchemy.orm import Session
 
+from gf_mobile.core.sync_events import resolve_event_type
 from gf_mobile.core.exceptions import SyncError
 from gf_mobile.persistence.models import Account, AppliedEvent, SyncOutbox, SyncState, Transaction
 from gf_mobile.sync.firestore_client import FirestoreClient
@@ -76,16 +77,17 @@ class SyncProtocol:
             for item in outbox_items:
                 payload = json.loads(item.payload)
                 payload = self._normalize_event_payload(payload)
+                event_type = self._resolve_event_type(item)
                 try:
                     print(
                         f"[SYNC][M][PUSH] send event_id={item.id} "
-                        f"type={item.event_type or 'txn_updated'} entity_id={item.entity_id}"
+                        f"type={event_type} entity_id={item.entity_id}"
                     )
                     await self.firestore_client.create_event(
                         user_uid=self.user_uid,
                         device_id=self.device_id,
                         event_id=item.id,
-                        event_type=item.event_type or "txn_updated",
+                        event_type=event_type,
                         entity_id=item.entity_id,
                         payload=payload,
                     )
@@ -214,6 +216,11 @@ class SyncProtocol:
             except ValueError:
                 pass
         return normalized
+
+    def _resolve_event_type(self, item: SyncOutbox) -> str:
+        if item.event_type:
+            return item.event_type
+        return resolve_event_type(item.entity_type, item.operation)
 
     async def refresh_base_snapshot(self) -> Dict[str, int]:
         """

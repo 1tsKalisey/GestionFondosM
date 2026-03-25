@@ -9,7 +9,7 @@ from tempfile import NamedTemporaryFile
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-from gf_mobile.persistence.models import Base, SavingsGoal, Category, User
+from gf_mobile.persistence.models import Base, SavingsGoal, Category, User, SyncOutbox
 from gf_mobile.services.savings_goal_service import SavingsGoalService
 
 
@@ -54,6 +54,9 @@ class TestSavingsGoalService:
         assert goal.name == "Vacation Fund"
         assert goal.target_amount == 5000.0
         assert goal.achieved is False
+        outbox = session.query(SyncOutbox).filter(SyncOutbox.entity_id == goal.id).first()
+        assert outbox is not None
+        assert outbox.event_type == "goal_created"
 
     def test_update_goal(self, session, setup_data):
         service = SavingsGoalService(session)
@@ -80,6 +83,14 @@ class TestSavingsGoalService:
         )
         updated = service.add_contribution(goal.id, 1500.0)
         assert updated.current_amount == 1500.0
+        outbox = (
+            session.query(SyncOutbox)
+            .filter(SyncOutbox.entity_id == goal.id, SyncOutbox.operation == "update")
+            .order_by(SyncOutbox.created_at.desc())
+            .first()
+        )
+        assert outbox is not None
+        assert outbox.event_type == "goal_updated"
 
     def test_contribution_marks_achieved(self, session, setup_data):
         service = SavingsGoalService(session)

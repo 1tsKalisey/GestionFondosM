@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 from typing import Dict, Optional
 
 from kivy.app import App
+from kivy.clock import Clock
 from kivy.lang import Builder
 from kivy.properties import StringProperty
 from kivy.uix.screenmanager import Screen
@@ -47,7 +48,7 @@ Builder.load_string(
                 text: "Volver"
                 theme_text_color: "Custom"
                 text_color: 1, 1, 1, 1
-                on_release: root.manager.current = 'transactions'
+                on_release: root.manager.current = root.origin_screen
 
         SectionCard:
             title: "Datos del movimiento"
@@ -142,15 +143,29 @@ class AddTransactionScreen(Screen):
         super().__init__(**kwargs)
         self.transaction_service = transaction_service
         self.selected_type: str = "gasto"
+        self.default_type: str = "gasto"
         self.selected_category_id: Optional[int] = None
         self.selected_account_id: Optional[str] = None
         self.category_id_by_name: Dict[str, int] = {}
         self.account_id_by_name: Dict[str, str] = {}
+        self.origin_screen: str = "transactions"
         self._dialog: Optional[MDDialog] = None
 
     def on_enter(self, *args):
+        self._apply_entry_context()
         self._load_dropdown_data()
         return super().on_enter(*args)
+
+    def prepare_for_entry(self, tx_type: str = "gasto", origin_screen: str = "transactions") -> None:
+        normalized = str(tx_type or "gasto").strip().lower()
+        if normalized not in {"gasto", "ingreso", "transferencia"}:
+            normalized = "gasto"
+        self.default_type = normalized
+        self.origin_screen = origin_screen or "transactions"
+
+    def _apply_entry_context(self) -> None:
+        self.selected_type = self.default_type
+        self.type_display = self.default_type
 
     def _load_dropdown_data(self) -> None:
         if not self.transaction_service:
@@ -244,6 +259,7 @@ class AddTransactionScreen(Screen):
                 note=note,
                 occurred_at=datetime.now(timezone.utc),
             )
+            self._refresh_related_screens()
             self._trigger_background_sync()
             self.ids.amount.text = ""
             self.ids.note.text = ""
@@ -274,6 +290,22 @@ class AddTransactionScreen(Screen):
                 print(f"[SYNC][ADD] background sync error: {exc}")
 
         threading.Thread(target=_worker, daemon=True).start()
+
+    def _refresh_related_screens(self) -> None:
+        app = App.get_running_app()
+        if not app or not hasattr(app, "sm"):
+            return
+
+        def _refresh(*_args):
+            for screen_name in ("dashboard", "transactions_results", "reports"):
+                try:
+                    screen = app.sm.get_screen(screen_name)
+                    if hasattr(screen, "refresh"):
+                        screen.refresh()
+                except Exception:
+                    continue
+
+        Clock.schedule_once(_refresh)
 
     def _show_popup(self, title: str, message: str) -> None:
         palette = resolve_palette()

@@ -417,6 +417,9 @@ class DashboardScreen(Screen):
 
     def on_new_transaction(self, tx_type: str = "gasto") -> None:
         try:
+            add_screen = self.manager.get_screen("add_transaction")
+            if hasattr(add_screen, "prepare_for_entry"):
+                add_screen.prepare_for_entry(tx_type=tx_type, origin_screen="dashboard")
             self.manager.current = "add_transaction"
         except Exception as exc:
             self.status_message = self._short_error(exc)

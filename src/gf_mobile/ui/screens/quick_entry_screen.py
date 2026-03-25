@@ -196,8 +196,33 @@ class QuickEntryScreen(Screen):
             session = self.transaction_service.session
             from gf_mobile.persistence.models import Account, Category
 
-            account = session.query(Account).first()
-            category = session.query(Category).first()
+            app = App.get_running_app()
+            default_account_id = (
+                app.get_quick_entry_default_account_id()
+                if app and hasattr(app, "get_quick_entry_default_account_id")
+                else ""
+            )
+            default_category_id = (
+                app.get_quick_entry_default_category_id(tx_type)
+                if app and hasattr(app, "get_quick_entry_default_category_id")
+                else None
+            )
+
+            account = (
+                session.query(Account).filter(Account.id == default_account_id).first()
+                if default_account_id
+                else None
+            )
+            if not account:
+                account = session.query(Account).first()
+
+            category = (
+                session.query(Category).filter(Category.id == default_category_id).first()
+                if default_category_id is not None
+                else None
+            )
+            if not category:
+                category = session.query(Category).first()
             if not account:
                 raise ValueError("No hay cuentas disponibles")
             if not category:

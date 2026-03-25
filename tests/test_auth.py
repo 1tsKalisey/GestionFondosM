@@ -94,6 +94,7 @@ class TestAuthService:
     def auth_service(self):
         """Crear instancia de AuthService para tests"""
         service = AuthService()
+        service.settings.FIREBASE_API_KEY = "test-firebase-api-key"
         yield service
         # Limpiar después de cada test
         service.sign_out()
@@ -278,6 +279,49 @@ class TestAuthService:
 
         with pytest.raises(Exception, match="autenticado"):
             await auth_service.get_valid_id_token()
+
+    def test_google_exchange_prefers_configured_redirect_uri(self, auth_service):
+        auth_service.settings.GOOGLE_OAUTH_REDIRECT_URI = "http://127.0.0.1:8080"
+        auth_service.settings.FIREBASE_AUTH_DOMAIN = "miapp.firebaseapp.com"
+
+        assert auth_service._build_google_firebase_request_uri() == "http://127.0.0.1:8080"
+
+    def test_google_exchange_falls_back_to_firebase_auth_domain(self, auth_service):
+        auth_service.settings.GOOGLE_OAUTH_REDIRECT_URI = ""
+        auth_service.settings.FIREBASE_AUTH_DOMAIN = "miapp.firebaseapp.com"
+
+        assert (
+            auth_service._build_google_firebase_request_uri()
+            == "https://miapp.firebaseapp.com/__/auth/handler"
+        )
+
+    @pytest.mark.asyncio
+    async def test_exchange_google_token_uses_resolved_request_uri(self, auth_service):
+        auth_service.settings.GOOGLE_OAUTH_REDIRECT_URI = ""
+        auth_service.settings.FIREBASE_AUTH_DOMAIN = "miapp.firebaseapp.com"
+
+        captured = {}
+
+        async def _fake_request(method, url, json_body=None, params=None, timeout=10):
+            captured["json_body"] = json_body
+            return (
+                200,
+                {
+                    "idToken": "firebase_id_token",
+                    "refreshToken": "firebase_refresh_token",
+                    "expiresIn": "3600",
+                    "localId": "firebase_user_123",
+                    "email": "google@example.com",
+                },
+                "",
+            )
+
+        with patch("gf_mobile.core.auth.request_json", side_effect=_fake_request):
+            with patch.object(auth_service, "_store_tokens_secure"):
+                tokens = await auth_service._exchange_google_token_for_firebase("google_id_token")
+
+        assert tokens.user_id == "firebase_user_123"
+        assert captured["json_body"]["requestUri"] == "https://miapp.firebaseapp.com/__/auth/handler"
 
     def test_is_authenticated(self, auth_service):
         """Test verificar autenticación"""

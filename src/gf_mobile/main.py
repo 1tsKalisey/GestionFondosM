@@ -329,6 +329,34 @@ class GestionFondosMApp(MDApp):
         finally:
             session.close()
 
+    def _get_sync_state_value(self, key: str, default=None):
+        if not self.session_factory:
+            return default
+        session = self.session_factory()
+        try:
+            item = session.query(SyncState).filter(SyncState.key == key).first()
+            if not item or item.value is None:
+                return default
+            return item.value
+        except Exception:
+            return default
+        finally:
+            session.close()
+
+    def _set_sync_state_value(self, key: str, value: str) -> None:
+        if not self.session_factory:
+            return
+        session = self.session_factory()
+        try:
+            item = session.query(SyncState).filter(SyncState.key == key).first()
+            if item:
+                item.value = value
+            else:
+                session.add(SyncState(key=key, value=value))
+            session.commit()
+        finally:
+            session.close()
+
     def is_quick_entry_enabled(self) -> bool:
         if not self.session_factory:
             return True
@@ -344,34 +372,162 @@ class GestionFondosMApp(MDApp):
             session.close()
 
     def set_quick_entry_enabled(self, enabled: bool) -> None:
+        self._set_sync_state_value("quick_entry_enabled", "true" if enabled else "false")
+
+    def save_quick_step_value(self, step_value: float) -> None:
+        self._set_sync_state_value("quick_step_value", str(float(step_value)))
+
+    def get_saved_report_range(self) -> tuple[str, str] | None:
+        start = self._get_sync_state_value("report_range_start", "")
+        end = self._get_sync_state_value("report_range_end", "")
+        if not start or not end:
+            return None
+        return str(start), str(end)
+
+    def save_report_range(self, start_value: str, end_value: str) -> None:
+        self._set_sync_state_value("report_range_start", str(start_value))
+        self._set_sync_state_value("report_range_end", str(end_value))
+
+    def get_quick_entry_default_account_id(self) -> str:
+        return str(self._get_sync_state_value("quick_entry_default_account_id", "") or "")
+
+    def set_quick_entry_default_account_id(self, account_id: str) -> None:
+        self._set_sync_state_value("quick_entry_default_account_id", str(account_id or ""))
+
+    def get_quick_entry_default_category_id(self, tx_type: str) -> int | None:
+        key = (
+            "quick_entry_income_category_id"
+            if str(tx_type).strip().lower() == "ingreso"
+            else "quick_entry_expense_category_id"
+        )
+        value = self._get_sync_state_value(key, "")
+        if value in (None, ""):
+            return None
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            return None
+
+    def set_quick_entry_default_category_id(self, tx_type: str, category_id: int | None) -> None:
+        key = (
+            "quick_entry_income_category_id"
+            if str(tx_type).strip().lower() == "ingreso"
+            else "quick_entry_expense_category_id"
+        )
+        self._set_sync_state_value(key, "" if category_id is None else str(int(category_id)))
+
+    def get_quick_entry_options(self) -> dict[str, list[dict[str, object]]]:
+        """Lee cuentas y categorias con una sesion corta para evitar objetos stale en UI."""
         if not self.session_factory:
-            return
+            return {"accounts": [], "categories": []}
+
+        from gf_mobile.persistence.models import Account, Category
+
         session = self.session_factory()
         try:
-            item = session.query(SyncState).filter(SyncState.key == "quick_entry_enabled").first()
-            value = "true" if enabled else "false"
-            if item:
-                item.value = value
-            else:
-                session.add(SyncState(key="quick_entry_enabled", value=value))
-            session.commit()
+            accounts = (
+                session.query(Account)
+                .order_by(Account.name.asc())
+                .all()
+            )
+            categories = (
+                session.query(Category)
+                .order_by(Category.name.asc())
+                .all()
+            )
+            return {
+                "accounts": [
+                    {"id": account.id, "name": account.name}
+                    for account in accounts
+                    if getattr(account, "name", None)
+                ],
+                "categories": [
+                    {"id": category.id, "name": category.name}
+                    for category in categories
+                    if getattr(category, "name", None)
+                ],
+            }
         finally:
             session.close()
 
-    def save_quick_step_value(self, step_value: float) -> None:
+    def get_pending_sync_count(self) -> int:
+        """Cuenta elementos pendientes de outbox con sesion corta."""
         if not self.session_factory:
-            return
+            return 0
+
+        from gf_mobile.persistence.models import SyncOutbox
+
         session = self.session_factory()
         try:
-            item = session.query(SyncState).filter(SyncState.key == "quick_step_value").first()
-            value = str(float(step_value))
-            if item:
-                item.value = value
-            else:
-                session.add(SyncState(key="quick_step_value", value=value))
-            session.commit()
+            return int(session.query(SyncOutbox).filter(SyncOutbox.synced == False).count())
         finally:
             session.close()
+
+    def _ensure_local_user(self, session, user_uid: str):
+        from gf_mobile.persistence.models import User, Account, Category
+
+        local_user = session.query(User).first()
+        if not local_user:
+            local_user = User(name="Usuario", server_uid=user_uid)
+            session.add(local_user)
+            session.flush()
+            session.add_all(
+                [
+                    Account(
+                        user_id=local_user.id,
+                        name="Efectivo",
+                        type="efectivo",
+                        currency="EUR",
+                        opening_balance=0.0,
+                    ),
+                    Category(name="General", budget_group="Otros"),
+                ]
+            )
+            session.commit()
+            print(f"Usuario local creado: {local_user.name} (ID: {local_user.id})")
+            return local_user
+
+        local_user.server_uid = user_uid
+        session.commit()
+        print(f"Usuario local actualizado: {local_user.name} (ID: {local_user.id})")
+        return local_user
+
+    def _bind_ui_services(self, session, user_id: int) -> None:
+        user_id_str = str(user_id)
+        tx_service = TransactionService(session, user_id=user_id_str)
+        cat_service = CategoryService(session, user_id=user_id_str)
+        budget_service = BudgetService(session, user_id=user_id_str)
+
+        self.transactions_screen.transaction_service = tx_service
+        self.transactions_results_screen.transaction_service = tx_service
+        self.add_transaction_screen.transaction_service = tx_service
+        self.dashboard_screen.transaction_service = tx_service
+        self.reports_screen.transaction_service = tx_service
+        self.quick_entry_screen.transaction_service = tx_service
+
+        self.categories_screen.category_service = cat_service
+        self.transactions_screen.category_service = cat_service
+        self.dashboard_screen.category_service = cat_service
+        self.reports_screen.category_service = cat_service
+
+        self.budgets_screen.budget_service = budget_service
+        self.budgets_screen.category_service = cat_service
+        self.dashboard_screen.budget_service = budget_service
+        self.reports_screen.budget_service = budget_service
+
+    def _configure_sync_services(self, session, user_uid: str) -> FirestoreClient:
+        device_id = self._get_or_create_device_id(session)
+        firestore_client = FirestoreClient(self.config_obj, self.auth_service)
+        sync_protocol = SyncProtocol(
+            session_factory=self.session_factory,
+            firestore_client=firestore_client,
+            device_id=device_id,
+            user_uid=user_uid,
+        )
+        sync_service = SimpleSyncService(sync_protocol)
+        self.sync_status_screen.sync_service = sync_service
+        self.sync_status_screen.session_factory = self.session_factory
+        return firestore_client
 
     def logout_user(self) -> None:
         try:
@@ -396,6 +552,15 @@ class GestionFondosMApp(MDApp):
 
         self.sm.current = "login"
 
+    def refresh_ui_session_state(self) -> None:
+        """Expira la sesion larga de UI para evitar objetos stale tras sync externa."""
+        if self.app_session is None:
+            return
+        try:
+            self.app_session.expire_all()
+        except Exception:
+            pass
+
     def on_login_success(self, user_uid: str, just_logged_in: bool = True) -> None:
         """Callback cuando el login es exitoso"""
         # Keep one long-lived session for UI services.
@@ -407,7 +572,18 @@ class GestionFondosMApp(MDApp):
         session = self.session_factory()
         self.app_session = session
         try:
-            from gf_mobile.persistence.models import User, Account, Category
+            local_user = self._ensure_local_user(session, user_uid)
+            self._bind_ui_services(session, local_user.id)
+            firestore_client = self._configure_sync_services(session, user_uid)
+
+            quick_enabled = self.is_quick_entry_enabled()
+            if not quick_enabled:
+                self.sm.current = "dashboard"
+            else:
+                self.sm.current = "dashboard" if just_logged_in else "quick_entry"
+
+            self._run_initial_and_incremental_sync(user_uid, firestore_client, local_user.id)
+            return
             
             # Buscar o crear usuario local
             local_user = session.query(User).first()

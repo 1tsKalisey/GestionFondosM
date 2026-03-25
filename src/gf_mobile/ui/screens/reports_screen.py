@@ -130,7 +130,8 @@ class ReportsScreen(Screen):
         if "nav_bar" in self.ids:
             self.ids.nav_bar.screen_manager = self.manager
             self.ids.nav_bar.current_screen = "reports"
-        self.apply_range_preset("30d")
+        if not self._load_saved_range():
+            self.apply_range_preset("30d")
         self.refresh()
 
     def refresh(self) -> None:
@@ -145,16 +146,21 @@ class ReportsScreen(Screen):
                 self.status_message = "Ingrese rango de fechas"
                 return
 
-            start_date = datetime.fromisoformat(start_text)
-            end_date = datetime.fromisoformat(end_text)
-            if start_date > end_date:
+            start_day = datetime.fromisoformat(start_text).date()
+            end_day = datetime.fromisoformat(end_text).date()
+            if start_day > end_day:
                 self.status_message = "El inicio no puede ser posterior al fin"
                 self._generate_category_summary([])
                 self._generate_budget_summary([])
                 return
             self.report_range_text = f"{start_text} -> {end_text}"
+            self._save_active_range()
             transactions = self.transaction_service.list_all(limit=500)
-            range_tx = [tx for tx in transactions if start_date <= tx.occurred_at <= end_date]
+            range_tx = [
+                tx
+                for tx in transactions
+                if start_day <= tx.occurred_at.date() <= end_day
+            ]
 
             self._generate_category_summary(range_tx)
             self._generate_budget_summary(range_tx)
@@ -232,6 +238,7 @@ class ReportsScreen(Screen):
         self.start_display = start.strftime("%Y-%m-%d")
         self.end_display = today.strftime("%Y-%m-%d")
         self.report_range_text = f"{self.start_display} -> {self.end_display}"
+        self._save_active_range()
 
     def open_range_picker(self) -> None:
         self._open_selection_dialog(
@@ -253,7 +260,33 @@ class ReportsScreen(Screen):
         self.start_display = start.strftime("%Y-%m-%d")
         self.end_display = today.strftime("%Y-%m-%d")
         self.report_range_text = f"{self.start_display} -> {self.end_display}"
+        self._save_active_range()
         self.refresh()
+
+    def _load_saved_range(self) -> bool:
+        from kivy.app import App
+
+        app = App.get_running_app()
+        if not app or not hasattr(app, "get_saved_report_range"):
+            return False
+        saved = app.get_saved_report_range()
+        if not saved:
+            return False
+        start_value, end_value = saved
+        self.start_display = start_value
+        self.end_display = end_value
+        self.report_range_text = f"{start_value} -> {end_value}"
+        return True
+
+    def _save_active_range(self) -> None:
+        from kivy.app import App
+
+        app = App.get_running_app()
+        if not app or not hasattr(app, "save_report_range"):
+            return
+        if not self.start_display or not self.end_display:
+            return
+        app.save_report_range(self.start_display, self.end_display)
 
     @staticmethod
     def _add_empty_summary(target, text: str) -> None:

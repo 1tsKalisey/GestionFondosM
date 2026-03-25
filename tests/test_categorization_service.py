@@ -14,6 +14,7 @@ from gf_mobile.persistence.models import (
     Category,
     Transaction,
     Account,
+    SyncOutbox,
     User,
     generate_uuid,
 )
@@ -84,6 +85,9 @@ class TestCategorizationService:
         assert rule.merchant_keyword == "trader joe's"
         assert rule.confidence == 0.6
         assert rule.user_defined is False
+        outbox = session.query(SyncOutbox).filter(SyncOutbox.entity_id == rule.id).first()
+        assert outbox is not None
+        assert outbox.event_type == "categorization_rule_created"
 
     def test_reuse_learned_rule(self, session, setup_data):
         """Si regla existe, reutiliza con mayor confianza."""
@@ -169,3 +173,22 @@ class TestCategorizationService:
         pending = service.list_pending_sync()
         assert len(pending) == 1
         assert pending[0]["operation"] == "create"
+
+    def test_update_rule_payload_includes_category_name(self, session, setup_data):
+        service = CategorizationService(session)
+        rule = service.learn_from_transaction(
+            transaction_id=generate_uuid(),
+            merchant="Ikea",
+            category_id=setup_data["groceries_id"],
+        )
+        service.update_rule_confidence(rule.id, 0.8)
+
+        outbox = (
+            session.query(SyncOutbox)
+            .filter(SyncOutbox.entity_id == rule.id, SyncOutbox.operation == "update")
+            .order_by(SyncOutbox.created_at.desc())
+            .first()
+        )
+        assert outbox is not None
+        assert outbox.event_type == "categorization_rule_updated"
+        assert "Groceries" in outbox.payload
