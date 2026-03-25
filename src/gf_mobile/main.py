@@ -562,8 +562,7 @@ class GestionFondosMApp(MDApp):
             pass
 
     def on_login_success(self, user_uid: str, just_logged_in: bool = True) -> None:
-        """Callback cuando el login es exitoso"""
-        # Keep one long-lived session for UI services.
+        """Callback cuando el login es exitoso."""
         if self.app_session is not None:
             try:
                 self.app_session.close()
@@ -576,11 +575,7 @@ class GestionFondosMApp(MDApp):
             self._bind_ui_services(session, local_user.id)
             firestore_client = self._configure_sync_services(session, user_uid)
 
-            quick_enabled = self.is_quick_entry_enabled()
-            if not quick_enabled:
-                self.sm.current = "dashboard"
-            else:
-                self.sm.current = "dashboard" if just_logged_in else "quick_entry"
+            self.sm.current = "dashboard"
 
             self._run_initial_and_incremental_sync(user_uid, firestore_client, local_user.id)
             return
