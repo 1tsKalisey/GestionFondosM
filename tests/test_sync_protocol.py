@@ -119,6 +119,36 @@ class TestSyncProtocol:
         assert token is None
 
     @pytest.mark.asyncio
+    async def test_push_outbox_infers_category_event_type_when_missing(self, session_factory, firestore_client_mock):
+        protocol = SyncProtocol(
+            session_factory=session_factory,
+            firestore_client=firestore_client_mock,
+            device_id="device-1",
+            user_uid="user-uid-1",
+        )
+
+        session = session_factory()
+        outbox = SyncOutbox(
+            id=generate_uuid(),
+            entity_type="category",
+            operation="create",
+            entity_id="1",
+            payload=json.dumps({"id": 1, "name": "Comida", "budget_group": "Necesidades"}),
+            created_at=datetime.utcnow(),
+            synced=False,
+            event_type=None,
+        )
+        session.add(outbox)
+        session.commit()
+        session.close()
+
+        pushed = await protocol.push_outbox()
+
+        assert pushed == 1
+        kwargs = firestore_client_mock.create_event.await_args.kwargs
+        assert kwargs["event_type"] == "category_created"
+
+    @pytest.mark.asyncio
     async def test_pull_and_apply_forces_one_time_full_replay(
         self, session_factory, firestore_client_mock
     ):

@@ -76,16 +76,17 @@ class SyncProtocol:
             for item in outbox_items:
                 payload = json.loads(item.payload)
                 payload = self._normalize_event_payload(payload)
+                event_type = self._resolve_event_type(item)
                 try:
                     print(
                         f"[SYNC][M][PUSH] send event_id={item.id} "
-                        f"type={item.event_type or 'txn_updated'} entity_id={item.entity_id}"
+                        f"type={event_type} entity_id={item.entity_id}"
                     )
                     await self.firestore_client.create_event(
                         user_uid=self.user_uid,
                         device_id=self.device_id,
                         event_id=item.id,
-                        event_type=item.event_type or "txn_updated",
+                        event_type=event_type,
                         entity_id=item.entity_id,
                         payload=payload,
                     )
@@ -214,6 +215,32 @@ class SyncProtocol:
             except ValueError:
                 pass
         return normalized
+
+    def _resolve_event_type(self, item: SyncOutbox) -> str:
+        if item.event_type:
+            return item.event_type
+
+        mapping = {
+            ("transaction", "create"): "txn_created",
+            ("transaction", "update"): "txn_updated",
+            ("transaction", "delete"): "txn_deleted",
+            ("budget", "create"): "budget_created",
+            ("budget", "update"): "budget_updated",
+            ("budget", "delete"): "budget_deleted",
+            ("category", "create"): "category_created",
+            ("category", "update"): "category_updated",
+            ("category", "delete"): "category_deleted",
+            ("recurring", "create"): "recurring_created",
+            ("recurring", "update"): "recurring_updated",
+            ("recurring", "delete"): "recurring_deleted",
+            ("alert", "create"): "alert_created",
+            ("alert", "update"): "alert_updated",
+            ("alert", "delete"): "alert_deleted",
+            ("savings_goal", "create"): "goal_created",
+            ("savings_goal", "update"): "goal_updated",
+            ("savings_goal", "delete"): "goal_deleted",
+        }
+        return mapping.get((item.entity_type, item.operation), "txn_updated")
 
     async def refresh_base_snapshot(self) -> Dict[str, int]:
         """

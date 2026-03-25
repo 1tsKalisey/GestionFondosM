@@ -2,23 +2,17 @@
 Tests para BudgetService
 """
 
-import pytest
+import json
 from datetime import datetime
 from tempfile import NamedTemporaryFile
+
+import pytest
 
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-from gf_mobile.persistence.models import (
-    Base,
-    Account,
-    Category,
-    Budget,
-    Transaction,
-    Alert,
-    generate_uuid,
-)
-from gf_mobile.services.budget_service import BudgetService
+from gf_mobile.persistence.models import Base, Account, Category, Budget, SyncOutbox, Transaction, Alert, generate_uuid
+from gf_mobile.services.budget_service import BudgetInput, BudgetService
 
 
 @pytest.fixture
@@ -83,6 +77,34 @@ class TestBudgetService:
 
         spent = service.calculate_spent(setup_data["category_id"], "2026-01")
         assert spent == 100.0
+
+    def test_update_budget_tracks_sync(self, session, setup_data):
+        service = BudgetService(session)
+        budget = service.create_budget(
+            category_id=setup_data["category_id"],
+            month="2026-01",
+            amount=500.0,
+        )
+
+        updated = service.update(
+            budget.id,
+            BudgetInput(category_id=setup_data["category_id"], limit=650.0, month="2026-02"),
+        )
+
+        outbox = session.query(SyncOutbox).filter(SyncOutbox.entity_id == budget.id).order_by(
+            SyncOutbox.created_at.desc()
+        ).first()
+
+        assert updated.amount == 650.0
+        assert updated.month == "2026-02"
+        assert updated.synced is False
+        assert outbox is not None
+        assert outbox.operation == "update"
+        assert outbox.event_type == "budget_updated"
+        payload = json.loads(outbox.payload)
+        assert payload["amount"] == "650.0"
+        assert payload["month"] == "2026-02"
+        assert payload["category_id"] == updated.category.sync_id
 
     def test_check_alerts_budget_exceeded(self, session, setup_data):
         service = BudgetService(session)

@@ -219,17 +219,14 @@ class BudgetsScreen(Screen):
 
             amount = float(limit_text)
             if self.selected_budget_id:
-                from gf_mobile.persistence.models import Budget
+                from gf_mobile.services.budget_service import BudgetInput
 
-                session = self.budget_service.session
-                budget = session.query(Budget).filter(Budget.id == self.selected_budget_id).first()
-                if budget:
-                    budget.category_id = category.id
-                    budget.amount = amount
-                    budget.month = month
-                    session.commit()
-                    self.status_message = "Presupuesto actualizado"
-                    self._show_dialog("Exito", self.status_message, is_error=False)
+                self.budget_service.update(
+                    self.selected_budget_id,
+                    BudgetInput(category_id=category.id, limit=amount, month=month),
+                )
+                self.status_message = "Presupuesto actualizado"
+                self._show_dialog("Exito", self.status_message, is_error=False)
             else:
                 from gf_mobile.services.budget_service import BudgetInput
 

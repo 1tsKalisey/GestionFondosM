@@ -98,6 +98,14 @@ class MergerService:
             self._merge_budget(session, operation, payload)
             return
 
+        # Categories
+        if event_type in {"category_created", "category_updated", "category_deleted"}:
+            operation = "delete" if event_type == "category_deleted" else "update"
+            if event_type == "category_created":
+                operation = "create"
+            self._merge_category(session, operation, payload)
+            return
+
         # Recurring Transactions
         if event_type in {"recurring_created", "recurring_updated", "recurring_deleted"}:
             operation = "delete" if event_type == "recurring_deleted" else "update"

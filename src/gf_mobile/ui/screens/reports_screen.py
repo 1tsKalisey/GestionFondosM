@@ -145,16 +145,20 @@ class ReportsScreen(Screen):
                 self.status_message = "Ingrese rango de fechas"
                 return
 
-            start_date = datetime.fromisoformat(start_text)
-            end_date = datetime.fromisoformat(end_text)
-            if start_date > end_date:
+            start_day = datetime.fromisoformat(start_text).date()
+            end_day = datetime.fromisoformat(end_text).date()
+            if start_day > end_day:
                 self.status_message = "El inicio no puede ser posterior al fin"
                 self._generate_category_summary([])
                 self._generate_budget_summary([])
                 return
             self.report_range_text = f"{start_text} -> {end_text}"
             transactions = self.transaction_service.list_all(limit=500)
-            range_tx = [tx for tx in transactions if start_date <= tx.occurred_at <= end_date]
+            range_tx = [
+                tx
+                for tx in transactions
+                if start_day <= tx.occurred_at.date() <= end_day
+            ]
 
             self._generate_category_summary(range_tx)
             self._generate_budget_summary(range_tx)

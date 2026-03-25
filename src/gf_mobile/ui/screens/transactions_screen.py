@@ -60,7 +60,7 @@ Builder.load_string(
                         MDRaisedButton:
                             text: "+ Nuevo"
                             md_bg_color: app.kivy_palette["accent"]
-                            on_release: root.manager.current = 'add_transaction'
+                            on_release: root.open_new_transaction()
 
                         MDFlatButton:
                             text: "Ver ultimo listado"
@@ -237,6 +237,15 @@ class TransactionsScreen(Screen):
 
     def toggle_categories(self) -> None:
         self.categories_expanded = not self.categories_expanded
+
+    def open_new_transaction(self) -> None:
+        try:
+            add_screen = self.manager.get_screen("add_transaction")
+            if hasattr(add_screen, "prepare_for_entry"):
+                add_screen.prepare_for_entry(tx_type="gasto", origin_screen="transactions")
+            self.manager.current = "add_transaction"
+        except Exception as exc:
+            self.status_message = self._short_error(exc)
 
     def apply_filters(self) -> None:
         date_from_text = self.ids.filter_date_from.text.strip()

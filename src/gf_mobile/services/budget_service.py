@@ -38,6 +38,15 @@ class BudgetService:
         """Crea un nuevo presupuesto (interfaz compatible para pantallas)."""
         return self.create_budget(data.category_id, data.month, data.limit)
 
+    def update(self, budget_id: str, data: BudgetInput) -> Budget:
+        """Actualiza categoria, mes e importe de un presupuesto."""
+        return self.update_budget(
+            budget_id=budget_id,
+            amount=data.limit,
+            category_id=data.category_id,
+            month=data.month,
+        )
+
     def list_all(self) -> List[Budget]:
         """Lista todos los presupuestos (interfaz compatible para pantallas)."""
         return self.session.query(Budget).all()
@@ -45,6 +54,9 @@ class BudgetService:
     def create_budget(self, category_id: int, month: str, amount: float) -> Budget:
         try:
             self._validate(category_id, month, amount)
+            duplicate = self.get_budget(category_id, month)
+            if duplicate:
+                raise ValidationError("Ya existe un presupuesto para esa categoria y mes")
             budget = Budget(
                 id=generate_uuid(),
                 category_id=category_id,
@@ -65,12 +77,28 @@ class BudgetService:
             self.session.rollback()
             raise DatabaseError(f"Error al crear presupuesto: {str(e)}")
 
-    def update_budget(self, budget_id: str, amount: float) -> Budget:
+    def update_budget(
+        self,
+        budget_id: str,
+        amount: float,
+        category_id: Optional[int] = None,
+        month: Optional[str] = None,
+    ) -> Budget:
         try:
             budget = self.session.query(Budget).filter(Budget.id == budget_id).first()
             if not budget:
                 raise ValidationError(f"Presupuesto no encontrado: {budget_id}")
 
+            next_category_id = category_id if category_id is not None else budget.category_id
+            next_month = month if month is not None else budget.month
+            self._validate(next_category_id, next_month, amount)
+
+            duplicate = self.get_budget(next_category_id, next_month)
+            if duplicate and duplicate.id != budget.id:
+                raise ValidationError("Ya existe un presupuesto para esa categoria y mes")
+
+            budget.category_id = next_category_id
+            budget.month = next_month
             budget.amount = amount
             budget.synced = False
             self.session.flush()
@@ -198,9 +226,11 @@ class BudgetService:
         return start, end
 
     def _serialize_budget(self, budget: Budget) -> dict:
+        category = self.session.query(Category).filter(Category.id == budget.category_id).first()
         return {
             "id": budget.id,
-            "category_id": budget.category_id,
+            "category_id": category.sync_id if category and category.sync_id else budget.category_id,
+            "category_name": category.name if category else None,
             "month": budget.month,
             "amount": str(budget.amount),
         }
@@ -219,10 +249,16 @@ class BudgetService:
         }
 
     def _enqueue_sync(self, entity_type: str, operation: str, entity_id: str, payload: dict) -> None:
+        event_type = "budget_updated"
+        if operation == "create":
+            event_type = "budget_created"
+        elif operation == "delete":
+            event_type = "budget_deleted"
         outbox = SyncOutbox(
             id=generate_uuid(),
             entity_type=entity_type,
             operation=operation,
+            event_type=event_type,
             entity_id=entity_id,
             payload=json.dumps(payload),
             created_at=datetime.utcnow(),
