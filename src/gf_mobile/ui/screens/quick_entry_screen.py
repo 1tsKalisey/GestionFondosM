@@ -140,7 +140,9 @@ class QuickEntryScreen(Screen):
     def on_kv_post(self, base_widget):
         self._apply_theme_colors()
         app = App.get_running_app()
-        if app and not self._palette_binding_registered:
+        if not hasattr(self, "_palette_callback"):
+            self._palette_callback = lambda *_: self._apply_theme_colors()
+        if app and not getattr(self, "_palette_binding_registered", False):
             app.bind(kivy_palette=self._palette_callback)
             self._palette_binding_registered = True
 

@@ -170,7 +170,9 @@ class ProfileScreen(Screen):
             self.ids.nav_bar.current_screen = "profile"
         self._apply_theme_colors()
         app = App.get_running_app()
-        if app and not self._palette_binding_registered:
+        if not hasattr(self, "_palette_callback"):
+            self._palette_callback = lambda *_: self._apply_theme_colors()
+        if app and not getattr(self, "_palette_binding_registered", False):
             app.bind(kivy_palette=self._palette_callback)
             self._palette_binding_registered = True
         self._refresh_profile_info()
