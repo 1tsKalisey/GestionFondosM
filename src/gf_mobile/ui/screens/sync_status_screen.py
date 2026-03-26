@@ -135,7 +135,9 @@ class SyncStatusScreen(Screen):
         for screen_name in ("dashboard", "transactions_results", "reports"):
             try:
                 screen = app.sm.get_screen(screen_name)
-                if hasattr(screen, "refresh"):
+                if hasattr(screen, "request_refresh"):
+                    screen.request_refresh()
+                elif hasattr(screen, "refresh"):
                     screen.refresh()
             except Exception:
                 continue

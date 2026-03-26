@@ -4,9 +4,11 @@ Configuración de base de datos SQLite y aplicación de migraciones
 
 import logging
 from pathlib import Path
+from sqlite3 import Connection as SQLite3Connection
 from sqlalchemy import create_engine, text
+from sqlalchemy import event
 from sqlalchemy.orm import sessionmaker, Session
-from sqlalchemy.pool import StaticPool
+from sqlalchemy.pool import NullPool
 
 from gf_mobile.core.config import get_settings
 from gf_mobile.persistence.models import Base
@@ -17,7 +19,8 @@ logger = logging.getLogger(__name__)
 def build_engine():
     """
     Crear y configurar engine SQLite
-    Usa StaticPool para evitar issues con threading en Kivy
+    Usa conexiones independientes por sesion para evitar contencion
+    entre UI y workers de sincronizacion en Android/Kivy.
     """
     settings = get_settings()
     settings.ensure_db_dir()
@@ -28,10 +31,26 @@ def build_engine():
 
     engine = create_engine(
         db_url,
-        connect_args={"check_same_thread": False},
-        poolclass=StaticPool,
+        connect_args={
+            "check_same_thread": False,
+            "timeout": 15,
+        },
+        poolclass=NullPool,
         echo=settings.DEBUG,
     )
+
+    @event.listens_for(engine, "connect")
+    def _configure_sqlite(dbapi_connection, _connection_record) -> None:
+        if not isinstance(dbapi_connection, SQLite3Connection):
+            return
+        cursor = dbapi_connection.cursor()
+        try:
+            cursor.execute("PRAGMA journal_mode=WAL")
+            cursor.execute("PRAGMA synchronous=NORMAL")
+            cursor.execute("PRAGMA foreign_keys=ON")
+            cursor.execute("PRAGMA busy_timeout=15000")
+        finally:
+            cursor.close()
 
     return engine
 
@@ -73,12 +92,12 @@ def apply_migrations(engine, migration_scripts: list[Path]):
     logger.info("Migraciones completadas")
 
 
-def init_database():
+def init_database(engine=None):
     """
     Inicializar base de datos: crear engine, aplicar migraciones, crear tables
     Llamar una sola vez en startup de la app
     """
-    engine = build_engine()
+    engine = engine or build_engine()
 
     # Crear tablas desde modelos SQLAlchemy (si no existen)
     Base.metadata.create_all(engine)

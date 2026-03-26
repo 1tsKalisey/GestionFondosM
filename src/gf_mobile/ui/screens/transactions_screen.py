@@ -6,6 +6,7 @@ from datetime import datetime
 from typing import Any, Dict, List, Optional
 
 from kivy.app import App
+from kivy.clock import Clock
 from kivy.lang import Builder
 from kivy.metrics import dp
 from kivy.properties import BooleanProperty, ListProperty, NumericProperty, StringProperty
@@ -205,6 +206,7 @@ class TransactionsScreen(Screen):
         self.category_buttons: Dict[str, MDRaisedButton] = {}
         self.selected_type: Optional[str] = None
         self._dialog: Optional[MDDialog] = None
+        self._categories_reload_requested = True
 
     def on_enter(self):
         self._apply_theme_colors()
@@ -212,8 +214,19 @@ class TransactionsScreen(Screen):
         if "nav_bar" in self.ids:
             self.ids.nav_bar.screen_manager = self.manager
             self.ids.nav_bar.current_screen = "transactions"
-        self._load_categories()
+        self.request_categories_reload()
         self.status_message = "Define filtros y pulsa Aplicar"
+
+    def request_categories_reload(self) -> None:
+        self._categories_reload_requested = True
+        Clock.unschedule(self._run_deferred_category_reload)
+        Clock.schedule_once(self._run_deferred_category_reload, 0)
+
+    def _run_deferred_category_reload(self, *_args) -> None:
+        if not self._categories_reload_requested:
+            return
+        self._categories_reload_requested = False
+        self._load_categories()
 
     def _update_responsive_layout(self) -> None:
         self.category_grid_cols = category_grid_cols_for_device(

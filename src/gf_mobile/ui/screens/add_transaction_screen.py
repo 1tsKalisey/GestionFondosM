@@ -166,6 +166,10 @@ class AddTransactionScreen(Screen):
     def _apply_entry_context(self) -> None:
         self.selected_type = self.default_type
         self.type_display = self.default_type
+        self.selected_category_id = None
+        self.selected_account_id = None
+        self.category_display = "Seleccionar"
+        self.account_display = "Seleccionar"
 
     def _load_dropdown_data(self) -> None:
         if not self.transaction_service:
@@ -273,7 +277,7 @@ class AddTransactionScreen(Screen):
         app = App.get_running_app()
         sync_screen = getattr(app, "sync_status_screen", None) if app else None
         sync_service = getattr(sync_screen, "sync_service", None) if sync_screen else None
-        if not sync_service:
+        if not sync_service or getattr(sync_screen, "is_syncing", False):
             return
 
         import asyncio
@@ -282,6 +286,8 @@ class AddTransactionScreen(Screen):
         def _worker():
             try:
                 result = asyncio.run(sync_service.sync_now(push_limit=100, pull_limit=50))
+                if app and hasattr(app, "refresh_ui_session_state"):
+                    Clock.schedule_once(lambda *_: app.refresh_ui_session_state())
                 print(
                     f"[SYNC][ADD] success={result.success} "
                     f"pushed={result.pushed} pulled={result.pulled} error={result.error}"
@@ -296,16 +302,20 @@ class AddTransactionScreen(Screen):
         if not app or not hasattr(app, "sm"):
             return
 
-        def _refresh(*_args):
-            for screen_name in ("dashboard", "transactions_results", "reports"):
+        def _mark_for_refresh(*_args):
+            for screen_name in ("dashboard", "transactions_results", "reports", "transactions"):
                 try:
                     screen = app.sm.get_screen(screen_name)
-                    if hasattr(screen, "refresh"):
+                    if hasattr(screen, "request_refresh"):
+                        screen.request_refresh()
+                    elif hasattr(screen, "request_categories_reload"):
+                        screen.request_categories_reload()
+                    elif hasattr(screen, "refresh") and app.sm.current == screen_name:
                         screen.refresh()
                 except Exception:
                     continue
 
-        Clock.schedule_once(_refresh)
+        Clock.schedule_once(_mark_for_refresh)
 
     def _show_popup(self, title: str, message: str) -> None:
         palette = resolve_palette()
