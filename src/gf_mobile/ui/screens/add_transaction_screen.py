@@ -44,11 +44,11 @@ Builder.load_string(
             title_color: 1, 1, 1, 1
             eyebrow_color: 1, 1, 1, 0.82
 
-                MDFlatButton:
-                    text: "Volver"
-                    theme_text_color: "Custom"
-                    text_color: 1, 1, 1, 1
-                    on_release: root.go_back()
+            MDFlatButton:
+                text: "Volver"
+                theme_text_color: "Custom"
+                text_color: 1, 1, 1, 1
+                on_release: root.go_back()
 
         SectionCard:
             title: "Datos del movimiento"
