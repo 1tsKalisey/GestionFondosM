@@ -525,8 +525,18 @@ class AuthService:
         device_code = (data or {}).get("device_code", "")
         expires_in = int((data or {}).get("expires_in", 1800))
         interval = int((data or {}).get("interval", 5))
-        verification_uri = (data or {}).get("verification_uri", "")
-        verification_uri_complete = (data or {}).get("verification_uri_complete", "")
+        verification_uri = (
+            (data or {}).get("verification_uri")
+            or (data or {}).get("verification_url")
+            or (data or {}).get("verificationUrl")
+            or ""
+        )
+        verification_uri_complete = (
+            (data or {}).get("verification_uri_complete")
+            or (data or {}).get("verification_url_complete")
+            or (data or {}).get("verificationUrlComplete")
+            or ""
+        )
         user_code = (data or {}).get("user_code", "")
 
         if not device_code:
@@ -537,7 +547,11 @@ class AuthService:
             logger.info("Abriendo navegador en Android para autenticar Google")
             await asyncio.to_thread(webbrowser.open, open_url, 1)
         else:
-            raise AuthError("Google no devolvio URL de verificacion para Android")
+            available_keys = ", ".join(sorted((data or {}).keys()))
+            raise AuthError(
+                "Google no devolvio URL de verificacion para Android. "
+                f"Claves recibidas: {available_keys}"
+            )
 
         logger.info(
             "Completa el login en navegador. verification_uri=%s user_code=%s",

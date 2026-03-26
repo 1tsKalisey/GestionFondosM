@@ -4,6 +4,7 @@ Reports screen.
 
 from datetime import datetime, timedelta
 
+from kivy.app import App
 from kivy.clock import Clock
 from kivy.lang import Builder
 from kivy.properties import StringProperty
@@ -149,7 +150,8 @@ class ReportsScreen(Screen):
 
     def refresh(self) -> None:
         try:
-            if not self.transaction_service or not self.category_service:
+            app = App.get_running_app()
+            if not app or not hasattr(app, "list_transactions_snapshot"):
                 self.status_message = "Servicios no configurados"
                 return
 
@@ -168,7 +170,7 @@ class ReportsScreen(Screen):
                 return
             self.report_range_text = f"{start_text} -> {end_text}"
             self._save_active_range()
-            transactions = self.transaction_service.list_all(limit=500)
+            transactions = app.list_transactions_snapshot(limit=500)
             range_tx = [
                 tx
                 for tx in transactions

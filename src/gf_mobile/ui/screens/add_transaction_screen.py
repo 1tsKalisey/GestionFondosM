@@ -172,13 +172,12 @@ class AddTransactionScreen(Screen):
         self.account_display = "Seleccionar"
 
     def _load_dropdown_data(self) -> None:
-        if not self.transaction_service:
+        app = App.get_running_app()
+        if not app or not hasattr(app, "list_categories_snapshot") or not hasattr(app, "list_accounts_snapshot"):
             return
-        session = self.transaction_service.session
-        from gf_mobile.persistence.models import Account, Category
 
-        categories = session.query(Category).order_by(Category.name.asc()).all()
-        accounts = session.query(Account).order_by(Account.name.asc()).all()
+        categories = app.list_categories_snapshot()
+        accounts = app.list_accounts_snapshot()
 
         self.category_id_by_name = {c.name: c.id for c in categories}
         self.account_id_by_name = {a.name: a.id for a in accounts}
@@ -233,29 +232,27 @@ class AddTransactionScreen(Screen):
             amount = float(self.ids.amount.text)
             if amount <= 0:
                 raise ValueError("El monto debe ser positivo")
-            session = self.transaction_service.session
+            app = App.get_running_app()
+            if not app or not hasattr(app, "create_transaction_entry"):
+                raise RuntimeError("La aplicacion no expone create_transaction_entry")
 
             category_id = self.selected_category_id
             if not category_id:
-                from gf_mobile.persistence.models import Category
-
-                category = session.query(Category).first()
-                if not category:
+                categories = app.list_categories_snapshot()
+                if not categories:
                     raise ValueError("No hay categorias disponibles")
-                category_id = category.id
+                category_id = categories[0].id
 
             account_id = self.selected_account_id
             if not account_id:
-                from gf_mobile.persistence.models import Account
-
-                account = session.query(Account).first()
-                if not account:
+                accounts = app.list_accounts_snapshot()
+                if not accounts:
                     raise ValueError("No hay cuentas disponibles")
-                account_id = account.id
+                account_id = accounts[0].id
 
             note = self.ids.note.text.strip() or None
 
-            self.transaction_service.create(
+            app.create_transaction_entry(
                 account_id=account_id,
                 type_=self.selected_type,
                 amount=amount,
@@ -268,34 +265,17 @@ class AddTransactionScreen(Screen):
             self.ids.amount.text = ""
             self.ids.note.text = ""
             self.status_message = "Transaccion guardada correctamente"
-            self._show_popup("Exito", "Transaccion guardada correctamente")
+            if self.manager and self.origin_screen:
+                self.manager.current = self.origin_screen
         except Exception as exc:
             self.status_message = f"Error: {exc}"
             self._show_popup("Error", self.status_message)
 
     def _trigger_background_sync(self) -> None:
         app = App.get_running_app()
-        sync_screen = getattr(app, "sync_status_screen", None) if app else None
-        sync_service = getattr(sync_screen, "sync_service", None) if sync_screen else None
-        if not sync_service or getattr(sync_screen, "is_syncing", False):
+        if not app or not hasattr(app, "schedule_background_sync"):
             return
-
-        import asyncio
-        import threading
-
-        def _worker():
-            try:
-                result = asyncio.run(sync_service.sync_now(push_limit=100, pull_limit=50))
-                if app and hasattr(app, "refresh_ui_session_state"):
-                    Clock.schedule_once(lambda *_: app.refresh_ui_session_state())
-                print(
-                    f"[SYNC][ADD] success={result.success} "
-                    f"pushed={result.pushed} pulled={result.pulled} error={result.error}"
-                )
-            except Exception as exc:
-                print(f"[SYNC][ADD] background sync error: {exc}")
-
-        threading.Thread(target=_worker, daemon=True).start()
+        app.schedule_background_sync(delay_seconds=1.0)
 
     def _refresh_related_screens(self) -> None:
         app = App.get_running_app()

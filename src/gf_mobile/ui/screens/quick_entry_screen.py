@@ -189,14 +189,12 @@ class QuickEntryScreen(Screen):
         self._create_quick_transaction(tx_type, amount)
 
     def _create_quick_transaction(self, tx_type: str, amount: float) -> None:
-        if not self.transaction_service:
-            self._show_dialog("Error", "Servicio de transacciones no configurado", is_error=True)
-            return
         try:
-            session = self.transaction_service.session
-            from gf_mobile.persistence.models import Account, Category
-
             app = App.get_running_app()
+            if not app or not hasattr(app, "create_transaction_entry"):
+                self._show_dialog("Error", "Servicio de transacciones no configurado", is_error=True)
+                return
+
             default_account_id = (
                 app.get_quick_entry_default_account_id()
                 if app and hasattr(app, "get_quick_entry_default_account_id")
@@ -208,27 +206,22 @@ class QuickEntryScreen(Screen):
                 else None
             )
 
-            account = (
-                session.query(Account).filter(Account.id == default_account_id).first()
-                if default_account_id
-                else None
-            )
-            if not account:
-                account = session.query(Account).first()
+            accounts = app.list_accounts_snapshot() if hasattr(app, "list_accounts_snapshot") else []
+            categories = app.list_categories_snapshot() if hasattr(app, "list_categories_snapshot") else []
 
-            category = (
-                session.query(Category).filter(Category.id == default_category_id).first()
-                if default_category_id is not None
-                else None
-            )
+            account = next((item for item in accounts if item.id == default_account_id), None)
+            if not account:
+                account = accounts[0] if accounts else None
+
+            category = next((item for item in categories if item.id == default_category_id), None)
             if not category:
-                category = session.query(Category).first()
+                category = categories[0] if categories else None
             if not account:
                 raise ValueError("No hay cuentas disponibles")
             if not category:
                 raise ValueError("No hay categorias disponibles")
 
-            self.transaction_service.create(
+            app.create_transaction_entry(
                 account_id=account.id,
                 type_=tx_type,
                 amount=amount,
@@ -244,25 +237,9 @@ class QuickEntryScreen(Screen):
 
     def _trigger_background_sync(self) -> None:
         app = App.get_running_app()
-        sync_screen = getattr(app, "sync_status_screen", None) if app else None
-        sync_service = getattr(sync_screen, "sync_service", None) if sync_screen else None
-        if not sync_service:
+        if not app or not hasattr(app, "schedule_background_sync"):
             return
-
-        import asyncio
-        import threading
-
-        def _worker():
-            try:
-                result = asyncio.run(sync_service.sync_now(push_limit=100, pull_limit=50))
-                print(
-                    f"[SYNC][QUICK] success={result.success} "
-                    f"pushed={result.pushed} pulled={result.pulled} error={result.error}"
-                )
-            except Exception as exc:
-                print(f"[SYNC][QUICK] background sync error: {exc}")
-
-        threading.Thread(target=_worker, daemon=True).start()
+        app.schedule_background_sync(delay_seconds=1.0)
 
     def _show_dialog(self, title: str, message: str, is_error: bool) -> None:
         app = App.get_running_app()

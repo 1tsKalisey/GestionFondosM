@@ -103,7 +103,7 @@ class SyncStatusScreen(Screen):
                 result = self.sync_service.sync_now_blocking(push_limit=100, pull_limit=50)
                 Clock.schedule_once(lambda *_: self._apply_sync_result(result))
             except Exception as exc:
-                Clock.schedule_once(lambda *_: self._apply_sync_error(exc))
+                Clock.schedule_once(lambda *_args, error=exc: self._apply_sync_error(error))
 
         threading.Thread(target=_worker, daemon=True).start()
 

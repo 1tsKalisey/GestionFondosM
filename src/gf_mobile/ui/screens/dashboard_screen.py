@@ -4,6 +4,7 @@ Dashboard screen.
 
 from datetime import datetime, timedelta
 
+from kivy.app import App
 from kivy.clock import Clock
 from kivy.lang import Builder
 from kivy.properties import NumericProperty, StringProperty
@@ -265,7 +266,8 @@ class DashboardScreen(Screen):
 
     def refresh(self) -> None:
         try:
-            if not self.transaction_service:
+            app = App.get_running_app()
+            if not app or not hasattr(app, "list_transactions_snapshot"):
                 self.status_message = "TransactionService no configurado"
                 return
 
@@ -276,7 +278,7 @@ class DashboardScreen(Screen):
             else:
                 end_date = today.replace(month=today.month + 1, day=1) - timedelta(days=1)
 
-            transactions = self.transaction_service.list_all(limit=500)
+            transactions = app.list_transactions_snapshot(limit=500)
             month_transactions = [
                 tx for tx in transactions if start_date.date() <= tx.occurred_at.date() <= end_date.date()
             ]
@@ -334,13 +336,31 @@ class DashboardScreen(Screen):
             self.status_message = self._short_error(exc)
 
     def _calculate_total_balance(self, transactions) -> float:
-        service = self.transaction_service
-        if service is None:
+        opening_balances = {}
+        app = App.get_running_app()
+        if app and hasattr(app, "list_accounts_snapshot"):
+            opening_balances = {
+                account.id: float(account.opening_balance or 0.0)
+                for account in app.list_accounts_snapshot()
+            }
+
+        if not transactions and not opening_balances:
             return 0.0
-        try:
-            return float(service.total_balance())
-        except Exception:
-            return 0.0
+        total = sum(opening_balances.values())
+        for tx in transactions:
+            tx_type = normalize_transaction_type(tx.type)
+            amount = float(tx.amount or 0.0)
+            if tx_type == "transferencia":
+                if tx.account_id in opening_balances:
+                    total -= amount
+                if getattr(tx, "to_account_id", None) in opening_balances:
+                    total += amount
+                continue
+            if tx_type == "ingreso":
+                total += amount
+            elif tx_type == "gasto":
+                total -= amount
+        return total
 
     def _update_budget_distribution(self, transactions) -> None:
         try:

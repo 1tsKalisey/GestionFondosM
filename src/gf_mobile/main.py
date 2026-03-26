@@ -5,6 +5,7 @@ Punto de entrada de la aplicacion movil
 
 import sys
 import logging
+from sqlalchemy.orm import joinedload
 
 # Configure minimal logging so messages appear in logcat reliably.
 logging.basicConfig(stream=sys.stderr, level=logging.INFO)
@@ -30,6 +31,7 @@ from gf_mobile.persistence.models import SyncState
 from gf_mobile.services.transaction_service import TransactionService
 from gf_mobile.services.category_service import CategoryService
 from gf_mobile.services.budget_service import BudgetService
+from gf_mobile.persistence.models import Account, Category, Transaction, SyncOutbox
 from kivy.clock import Clock
 import threading
 import asyncio
@@ -65,6 +67,8 @@ class GestionFondosMApp(MDApp):
         self.app_session = None
         self.auth_service = None
         self.theme_manager = get_theme_manager()
+        self._background_sync_pending = False
+        self._background_sync_running = False
 
     def build(self):
         """Construir la aplicacion"""
@@ -421,8 +425,6 @@ class GestionFondosMApp(MDApp):
         if not self.session_factory:
             return {"accounts": [], "categories": []}
 
-        from gf_mobile.persistence.models import Account, Category
-
         session = self.session_factory()
         try:
             accounts = (
@@ -455,13 +457,122 @@ class GestionFondosMApp(MDApp):
         if not self.session_factory:
             return 0
 
-        from gf_mobile.persistence.models import SyncOutbox
-
         session = self.session_factory()
         try:
             return int(session.query(SyncOutbox).filter(SyncOutbox.synced == False).count())
         finally:
             session.close()
+
+    def list_transactions_snapshot(self, limit: int = 500) -> list[Transaction]:
+        """Obtiene transacciones recientes usando una sesion corta."""
+        if not self.session_factory:
+            return []
+
+        session = self.session_factory()
+        try:
+            return (
+                session.query(Transaction)
+                .options(joinedload(Transaction.category))
+                .order_by(Transaction.occurred_at.desc())
+                .limit(int(limit))
+                .all()
+            )
+        finally:
+            session.close()
+
+    def list_categories_snapshot(self) -> list[Category]:
+        """Obtiene categorias ordenadas usando una sesion corta."""
+        if not self.session_factory:
+            return []
+
+        session = self.session_factory()
+        try:
+            return session.query(Category).order_by(Category.name.asc()).all()
+        finally:
+            session.close()
+
+    def list_accounts_snapshot(self) -> list[Account]:
+        """Obtiene cuentas ordenadas usando una sesion corta."""
+        if not self.session_factory:
+            return []
+
+        session = self.session_factory()
+        try:
+            return session.query(Account).order_by(Account.name.asc()).all()
+        finally:
+            session.close()
+
+    def create_transaction_entry(
+        self,
+        *,
+        account_id: str,
+        type_: str,
+        amount: float,
+        category_id: int,
+        note: str | None = None,
+        occurred_at=None,
+    ) -> Transaction:
+        """Crea un movimiento usando una sesion corta separada de la UI."""
+        if not self.session_factory:
+            raise RuntimeError("SessionFactory no configurada")
+
+        session = self.session_factory()
+        try:
+            tx_service = TransactionService(session, user_id="")
+            transaction = tx_service.create(
+                account_id=account_id,
+                type_=type_,
+                amount=amount,
+                category_id=category_id,
+                note=note,
+                occurred_at=occurred_at,
+            )
+            return transaction
+        finally:
+            session.close()
+
+    def schedule_background_sync(self, delay_seconds: float = 1.0) -> None:
+        """Programa una sync incremental con debounce para evitar tormenta de workers."""
+        if self._background_sync_running:
+            self._background_sync_pending = True
+            return
+
+        Clock.unschedule(self._run_background_sync)
+        Clock.schedule_once(self._run_background_sync, max(0.0, float(delay_seconds)))
+
+    def _run_background_sync(self, *_args) -> None:
+        if self._background_sync_running:
+            self._background_sync_pending = True
+            return
+
+        sync_service = getattr(self.sync_status_screen, "sync_service", None)
+        if not sync_service:
+            return
+
+        self._background_sync_running = True
+        self._background_sync_pending = False
+
+        def _worker():
+            try:
+                result = sync_service.sync_now_blocking(push_limit=100, pull_limit=50)
+                if result.success:
+                    Clock.schedule_once(lambda *_: self.sync_status_screen.update_last_sync_time())
+                Clock.schedule_once(lambda *_: self.refresh_ui_session_state())
+                Clock.schedule_once(lambda *_: self.transactions_results_screen.request_refresh())
+                Clock.schedule_once(lambda *_: self.dashboard_screen.request_refresh())
+                Clock.schedule_once(lambda *_: self.reports_screen.request_refresh())
+            except Exception as exc:
+                print(f"[SYNC][APP] background sync error: {exc}")
+            finally:
+                def _finish(*_ui_args):
+                    self._background_sync_running = False
+                    if self._background_sync_pending:
+                        self._background_sync_pending = False
+                        self.schedule_background_sync(delay_seconds=1.0)
+
+                Clock.schedule_once(_finish)
+
+        threading.Thread(target=_worker, daemon=True).start()
 
     def _ensure_local_user(self, session, user_uid: str):
         from gf_mobile.persistence.models import User, Account, Category

@@ -125,12 +125,13 @@ class TransactionsResultsScreen(Screen):
 
     def refresh(self) -> None:
         self.ids.results_container.clear_widgets()
-        if not self.transaction_service:
+        app = App.get_running_app()
+        if not app or not hasattr(app, "list_transactions_snapshot"):
             self.status_message = "TransactionService no configurado"
             return
 
         try:
-            transactions = self.transaction_service.list_all(limit=500)
+            transactions = app.list_transactions_snapshot(limit=500)
             filtered_txs = self._apply_filters_to_list(transactions)
             filtered_txs.sort(key=lambda tx: tx.occurred_at, reverse=True)
             if not filtered_txs:

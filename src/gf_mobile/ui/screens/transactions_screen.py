@@ -327,11 +327,12 @@ class TransactionsScreen(Screen):
         container.clear_widgets()
         self.category_buttons.clear()
         try:
-            if not self.category_service:
+            app = App.get_running_app()
+            if not app or not hasattr(app, "list_categories_snapshot"):
                 self.selected_categories = []
                 self.categories_button_text = "Categorias: sin datos"
                 return
-            categories = self.category_service.list_all()
+            categories = app.list_categories_snapshot()
             names = sorted({c.name for c in categories if getattr(c, "name", None)})
             for name in names:
                 button = MDRaisedButton(
