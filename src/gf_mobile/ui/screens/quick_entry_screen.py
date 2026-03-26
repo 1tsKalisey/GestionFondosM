@@ -247,18 +247,19 @@ class QuickEntryScreen(Screen):
         app = App.get_running_app()
         if not app or not hasattr(app, "schedule_background_sync"):
             return
-        app.schedule_background_sync(delay_seconds=1.0)
+        app.schedule_background_sync(delay_seconds=2.5)
 
     def _refresh_related_screens(self) -> None:
         app = App.get_running_app()
         if not app or not hasattr(app, "sm"):
             return
+        current_screen = app.sm.current
         for screen_name in ("dashboard", "transactions", "transactions_results", "reports"):
             try:
                 screen = app.sm.get_screen(screen_name)
                 if hasattr(screen, "request_refresh"):
                     screen.request_refresh()
-                elif hasattr(screen, "refresh"):
+                elif hasattr(screen, "refresh") and current_screen == screen_name:
                     screen.refresh()
             except Exception:
                 continue

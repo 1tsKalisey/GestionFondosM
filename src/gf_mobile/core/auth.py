@@ -8,7 +8,7 @@ import logging
 import os
 import sys
 from datetime import datetime, timedelta, timezone
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, Callable
 from dataclasses import dataclass
 import importlib
 import importlib.util
@@ -78,9 +78,22 @@ class AuthService:
         self.settings = get_settings()
         self.tokens: Optional[AuthTokens] = None
         self._current_user_email: Optional[str] = None
+        self._status_callback: Optional[Callable[[str], None]] = None
         self._keyring = self._load_keyring()
         self._token_file = self._build_token_file()
         self._load_tokens_from_storage()
+
+    def set_status_callback(self, callback: Optional[Callable[[str], None]]) -> None:
+        self._status_callback = callback
+
+    def _publish_status(self, message: str) -> None:
+        callback = self._status_callback
+        if not callback:
+            return
+        try:
+            callback(message)
+        except Exception as exc:
+            logger.debug("No se pudo publicar estado auth: %s", exc)
 
     def _load_keyring(self):
         """Carga keyring si está disponible en el entorno."""
@@ -438,6 +451,7 @@ class AuthService:
         """
         try:
             if self._is_android():
+                self._publish_status("Abriendo navegador para Google...")
                 id_token = await self._google_device_authorization_flow()
             else:
                 from google_auth_oauthlib.flow import InstalledAppFlow
@@ -558,9 +572,22 @@ class AuthService:
             verification_uri,
             user_code,
         )
+        status_lines = ["Continua el login de Google en el navegador."]
+        if verification_uri:
+            status_lines.append(f"URL: {verification_uri}")
+        if user_code:
+            status_lines.append(f"Codigo: {user_code}")
+        self._publish_status("\n".join(status_lines))
 
         deadline = time.monotonic() + expires_in
         while time.monotonic() < deadline:
+            remaining_seconds = max(0, int(deadline - time.monotonic()))
+            if user_code:
+                self._publish_status(
+                    "Esperando autorizacion de Google...\n"
+                    f"Codigo: {user_code}\n"
+                    f"Tiempo restante: {remaining_seconds}s"
+                )
             await asyncio.sleep(max(1, interval))
             poll_status, poll_data, poll_text = await request_json(
                 "POST",

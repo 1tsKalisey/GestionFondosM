@@ -44,11 +44,11 @@ Builder.load_string(
             title_color: 1, 1, 1, 1
             eyebrow_color: 1, 1, 1, 0.82
 
-            MDFlatButton:
-                text: "Volver"
-                theme_text_color: "Custom"
-                text_color: 1, 1, 1, 1
-                on_release: root.manager.current = root.origin_screen
+                MDFlatButton:
+                    text: "Volver"
+                    theme_text_color: "Custom"
+                    text_color: 1, 1, 1, 1
+                    on_release: root.go_back()
 
         SectionCard:
             title: "Datos del movimiento"
@@ -149,6 +149,7 @@ class AddTransactionScreen(Screen):
         self.category_id_by_name: Dict[str, int] = {}
         self.account_id_by_name: Dict[str, str] = {}
         self.origin_screen: str = "transactions"
+        self._last_origin_screen: str = "transactions"
         self._dialog: Optional[MDDialog] = None
 
     def on_enter(self, *args):
@@ -162,6 +163,7 @@ class AddTransactionScreen(Screen):
             normalized = "gasto"
         self.default_type = normalized
         self.origin_screen = origin_screen or "transactions"
+        self._last_origin_screen = self.origin_screen
 
     def _apply_entry_context(self) -> None:
         self.selected_type = self.default_type
@@ -260,22 +262,28 @@ class AddTransactionScreen(Screen):
                 note=note,
                 occurred_at=datetime.now(timezone.utc),
             )
-            self._refresh_related_screens()
-            self._trigger_background_sync()
             self.ids.amount.text = ""
             self.ids.note.text = ""
             self.status_message = "Transaccion guardada correctamente"
-            if self.manager and self.origin_screen:
-                self.manager.current = self.origin_screen
+            if self.manager:
+                target_screen = self._resolve_return_screen()
+                self.manager.current = target_screen
+            Clock.schedule_once(lambda *_: self._refresh_related_screens(), 0)
+            Clock.schedule_once(lambda *_: self._trigger_background_sync(), 1.5)
         except Exception as exc:
             self.status_message = f"Error: {exc}"
             self._show_popup("Error", self.status_message)
+
+    def go_back(self) -> None:
+        if not self.manager:
+            return
+        self.manager.current = self._resolve_return_screen()
 
     def _trigger_background_sync(self) -> None:
         app = App.get_running_app()
         if not app or not hasattr(app, "schedule_background_sync"):
             return
-        app.schedule_background_sync(delay_seconds=1.0)
+        app.schedule_background_sync(delay_seconds=2.5)
 
     def _refresh_related_screens(self) -> None:
         app = App.get_running_app()
@@ -283,19 +291,38 @@ class AddTransactionScreen(Screen):
             return
 
         def _mark_for_refresh(*_args):
-            for screen_name in ("dashboard", "transactions_results", "reports", "transactions"):
+            current_screen = app.sm.current
+            target_screen = self._resolve_return_screen()
+            screens_to_refresh = {"dashboard", "reports", target_screen}
+            if target_screen == "transactions":
+                screens_to_refresh.add("transactions_results")
+            for screen_name in screens_to_refresh:
                 try:
                     screen = app.sm.get_screen(screen_name)
                     if hasattr(screen, "request_refresh"):
                         screen.request_refresh()
                     elif hasattr(screen, "request_categories_reload"):
                         screen.request_categories_reload()
-                    elif hasattr(screen, "refresh") and app.sm.current == screen_name:
+                    elif hasattr(screen, "refresh") and current_screen == screen_name:
                         screen.refresh()
                 except Exception:
                     continue
 
         Clock.schedule_once(_mark_for_refresh)
+
+    def _resolve_return_screen(self) -> str:
+        fallback = "dashboard"
+        manager = self.manager
+        if not manager:
+            return fallback
+        target = (self.origin_screen or self._last_origin_screen or fallback).strip()
+        if not target or target == "quick_entry":
+            target = fallback
+        try:
+            manager.get_screen(target)
+            return target
+        except Exception:
+            return fallback
 
     def _show_popup(self, title: str, message: str) -> None:
         palette = resolve_palette()

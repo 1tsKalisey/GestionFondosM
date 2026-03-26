@@ -323,6 +323,39 @@ class TestAuthService:
         assert tokens.user_id == "firebase_user_123"
         assert captured["json_body"]["requestUri"] == "https://miapp.firebaseapp.com/__/auth/handler"
 
+    @pytest.mark.asyncio
+    async def test_google_device_flow_publishes_user_code_status(self, auth_service):
+        auth_service.settings.GOOGLE_OAUTH_DEVICE_CLIENT_ID = "device-client-id"
+        statuses = []
+
+        async def _fake_request(method, url, data=None, json_body=None, params=None, timeout=10):
+            if url == "https://oauth2.googleapis.com/device/code":
+                return (
+                    200,
+                    {
+                        "device_code": "device-code-123",
+                        "user_code": "ABCD-EFGH",
+                        "verification_uri": "https://google.com/device",
+                        "expires_in": 60,
+                        "interval": 1,
+                    },
+                    "",
+                )
+            if url == "https://oauth2.googleapis.com/token":
+                return (200, {"id_token": "google-id-token"}, "")
+            raise AssertionError(f"Unexpected URL: {url}")
+
+        auth_service.set_status_callback(statuses.append)
+
+        with patch("gf_mobile.core.auth.request_json", side_effect=_fake_request):
+            with patch("gf_mobile.core.auth.webbrowser.open", return_value=True):
+                with patch("gf_mobile.core.auth.asyncio.sleep", new=AsyncMock()):
+                    token = await auth_service._google_device_authorization_flow()
+
+        assert token == "google-id-token"
+        assert any("Codigo: ABCD-EFGH" in status for status in statuses)
+        assert any("https://google.com/device" in status for status in statuses)
+
     def test_is_authenticated(self, auth_service):
         """Test verificar autenticación"""
         assert not auth_service.is_authenticated()

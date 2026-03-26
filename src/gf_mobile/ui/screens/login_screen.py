@@ -4,7 +4,9 @@ Login screen.
 
 from kivy.lang import Builder
 from kivy.properties import BooleanProperty, StringProperty
+from kivy.clock import Clock
 from kivy.uix.screenmanager import Screen
+import threading
 
 from gf_mobile.ui.widgets.shell import HeroCard, ScreenHeader, SectionCard
 
@@ -134,6 +136,11 @@ class LoginScreen(Screen):
             return
         self.status_message = "Abriendo navegador para Google..."
         self.status_color_name = "text_secondary"
+        self.auth_service.set_status_callback(self._set_google_status_from_worker)
+        worker = threading.Thread(target=self._run_google_login_worker, daemon=True)
+        worker.start()
+
+    def _run_google_login_worker(self) -> None:
         try:
             import asyncio
 
@@ -143,17 +150,30 @@ class LoginScreen(Screen):
 
             google_email = self.auth_service.get_current_user_email()
             SessionManager().create_session(tokens.user_id, google_email)
-
-            from kivy.app import App
-
-            app = App.get_running_app()
-            if app:
-                app.on_login_success(tokens.user_id, just_logged_in=True)
-            self.status_message = "Sesion iniciada con Google"
-            self.status_color_name = "success"
+            Clock.schedule_once(
+                lambda _dt: self._finish_google_login_success(tokens.user_id),
+                0,
+            )
         except Exception as exc:  # noqa: BLE001
-            self.status_message = f"Error: {exc}"
-            self.status_color_name = "error"
+            Clock.schedule_once(lambda _dt, error=exc: self._finish_google_login_error(error), 0)
+        finally:
+            self.auth_service.set_status_callback(None)
+
+    def _set_google_status_from_worker(self, message: str) -> None:
+        Clock.schedule_once(lambda _dt: self.set_status(message), 0)
+
+    def _finish_google_login_success(self, user_id: str) -> None:
+        from kivy.app import App
+
+        app = App.get_running_app()
+        if app:
+            app.on_login_success(user_id, just_logged_in=True)
+        self.status_message = "Sesion iniciada con Google"
+        self.status_color_name = "success"
+
+    def _finish_google_login_error(self, exc: Exception) -> None:
+        self.status_message = f"Error: {exc}"
+        self.status_color_name = "error"
 
     def set_status(self, message: str) -> None:
         self.status_message = message
