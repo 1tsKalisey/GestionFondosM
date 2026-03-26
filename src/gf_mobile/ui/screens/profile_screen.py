@@ -161,6 +161,8 @@ class ProfileScreen(Screen):
         self._dialog: Optional[MDDialog] = None
         self._account_map: dict[str, str] = {}
         self._category_map: dict[str, int] = {}
+        self._palette_binding_registered = False
+        self._palette_callback = lambda *_: self._apply_theme_colors()
 
     def on_enter(self):
         if "nav_bar" in self.ids:
@@ -168,8 +170,9 @@ class ProfileScreen(Screen):
             self.ids.nav_bar.current_screen = "profile"
         self._apply_theme_colors()
         app = App.get_running_app()
-        if app:
-            app.bind(kivy_palette=lambda *_: self._apply_theme_colors())
+        if app and not self._palette_binding_registered:
+            app.bind(kivy_palette=self._palette_callback)
+            self._palette_binding_registered = True
         self._refresh_profile_info()
         self._refresh_theme_state()
         self._refresh_quick_values()

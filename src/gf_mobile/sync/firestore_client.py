@@ -148,16 +148,11 @@ class FirestoreClient:
                 }
             }
 
-        url = self._run_query_path(user_uid)
-        resp = await self._request("POST", url, json_body=query)
-
-        events: List[Dict[str, Any]] = []
-        for row in resp:
-            doc = row.get("document")
-            if not doc:
-                continue
-            event = self._from_firestore_document(doc)
-            events.append(event)
+        events = await self._run_paginated_query(
+            user_uid=user_uid,
+            query_body=query,
+            page_size=page_size,
+        )
         return events, None
 
     async def update_device_state(
@@ -232,6 +227,41 @@ class FirestoreClient:
         for key, value in fields.items():
             result[key] = self._from_firestore_value(value)
         return result
+
+    async def _run_paginated_query(
+        self,
+        *,
+        user_uid: str,
+        query_body: Dict[str, Any],
+        page_size: int,
+    ) -> List[Dict[str, Any]]:
+        """Ejecuta una runQuery en lotes usando offset para evitar truncado."""
+        url = self._run_query_path(user_uid)
+        offset = 0
+        items: List[Dict[str, Any]] = []
+
+        while True:
+            structured_query = dict(query_body.get("structuredQuery", {}))
+            structured_query["limit"] = page_size
+            if offset:
+                structured_query["offset"] = offset
+            page_query = {"structuredQuery": structured_query}
+
+            result = await self._request("POST", url, json_body=page_query)
+
+            page_items: List[Dict[str, Any]] = []
+            if isinstance(result, list):
+                for row in result:
+                    doc = row.get("document")
+                    if doc:
+                        page_items.append(self._extract_doc_fields(doc))
+
+            items.extend(page_items)
+            if len(page_items) < page_size:
+                break
+            offset += len(page_items)
+
+        return items
 
     def _from_firestore_value(self, value: Dict[str, Any]) -> Any:
         if "stringValue" in value:
@@ -368,18 +398,11 @@ class FirestoreClient:
             }
         }
         try:
-            result = await self._request(
-                "POST",
-                self._run_query_path(user_uid),
-                json_body=query_body,
+            return await self._run_paginated_query(
+                user_uid=user_uid,
+                query_body=query_body,
+                page_size=1000,
             )
-            transactions = []
-            if isinstance(result, list):
-                for row in result:
-                    doc = row.get("document")
-                    if doc:
-                        transactions.append(self._extract_doc_fields(doc))
-            return transactions
         except Exception as e:
             raise NetworkError(f"Error fetching transactions: {str(e)}")
 

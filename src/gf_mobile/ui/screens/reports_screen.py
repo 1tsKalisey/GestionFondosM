@@ -254,6 +254,7 @@ class ReportsScreen(Screen):
         self.end_display = today.strftime("%Y-%m-%d")
         self.report_range_text = f"{self.start_display} -> {self.end_display}"
         self._save_active_range()
+        self.request_refresh()
 
     def open_range_picker(self) -> None:
         self._open_selection_dialog(

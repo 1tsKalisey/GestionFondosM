@@ -518,7 +518,9 @@ class GestionFondosMApp(MDApp):
 
         session = self.session_factory()
         try:
-            tx_service = TransactionService(session, user_id="")
+            account = session.query(Account).filter(Account.id == account_id).first()
+            user_id = str(account.user_id) if account and getattr(account, "user_id", None) is not None else ""
+            tx_service = TransactionService(session, user_id=user_id)
             transaction = tx_service.create(
                 account_id=account_id,
                 type_=type_,
@@ -558,9 +560,7 @@ class GestionFondosMApp(MDApp):
                 if result.success:
                     Clock.schedule_once(lambda *_: self.sync_status_screen.update_last_sync_time())
                 Clock.schedule_once(lambda *_: self.refresh_ui_session_state())
-                Clock.schedule_once(lambda *_: self.transactions_results_screen.request_refresh())
-                Clock.schedule_once(lambda *_: self.dashboard_screen.request_refresh())
-                Clock.schedule_once(lambda *_: self.reports_screen.request_refresh())
+                Clock.schedule_once(lambda *_: self._refresh_post_sync_screens())
             except Exception as exc:
                 print(f"[SYNC][APP] background sync error: {exc}")
             finally:
@@ -672,6 +672,33 @@ class GestionFondosMApp(MDApp):
         except Exception:
             pass
 
+    def _determine_post_login_screen(self, just_logged_in: bool) -> str:
+        if self.is_quick_entry_enabled() and not just_logged_in:
+            return "quick_entry"
+        return "dashboard"
+
+    def _refresh_post_sync_screens(self) -> None:
+        for screen_name in (
+            "dashboard",
+            "transactions",
+            "transactions_results",
+            "categories",
+            "budgets",
+            "reports",
+            "profile",
+            "quick_entry",
+        ):
+            try:
+                screen = self.sm.get_screen(screen_name)
+                if hasattr(screen, "request_refresh"):
+                    screen.request_refresh()
+                elif hasattr(screen, "request_categories_reload"):
+                    screen.request_categories_reload()
+                elif hasattr(screen, "refresh"):
+                    screen.refresh()
+            except Exception:
+                continue
+
     def on_login_success(self, user_uid: str, just_logged_in: bool = True) -> None:
         """Callback cuando el login es exitoso."""
         if self.app_session is not None:
@@ -686,7 +713,7 @@ class GestionFondosMApp(MDApp):
             self._bind_ui_services(session, local_user.id)
             firestore_client = self._configure_sync_services(session, user_uid)
 
-            self.sm.current = "dashboard"
+            self.sm.current = self._determine_post_login_screen(just_logged_in)
 
             self._run_initial_and_incremental_sync(user_uid, firestore_client, local_user.id)
             return
@@ -806,8 +833,7 @@ class GestionFondosMApp(MDApp):
                             lambda *_: self.sync_status_screen.update_last_sync_time()
                         )
                     Clock.schedule_once(lambda *_: self.refresh_ui_session_state())
-                    Clock.schedule_once(lambda *_: self.transactions_results_screen.request_refresh())
-                    Clock.schedule_once(lambda *_: self.dashboard_screen.request_refresh())
+                    Clock.schedule_once(lambda *_: self._refresh_post_sync_screens())
             except Exception as e:
                 print(f"Error en sincronizacion: {str(e)}")
                 error_message = f"Error en sincronizacion: {str(e)}"

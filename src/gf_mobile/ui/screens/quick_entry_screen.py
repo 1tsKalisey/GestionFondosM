@@ -129,6 +129,8 @@ class QuickEntryScreen(Screen):
         super().__init__(**kwargs)
         self.transaction_service = transaction_service
         self._dialog: Optional[MDDialog] = None
+        self._palette_binding_registered = False
+        self._palette_callback = lambda *_: self._apply_theme_colors()
 
     def on_enter(self, *args):
         self._apply_theme_colors()
@@ -138,8 +140,9 @@ class QuickEntryScreen(Screen):
     def on_kv_post(self, base_widget):
         self._apply_theme_colors()
         app = App.get_running_app()
-        if app:
-            app.bind(kivy_palette=lambda *_: self._apply_theme_colors())
+        if app and not self._palette_binding_registered:
+            app.bind(kivy_palette=self._palette_callback)
+            self._palette_binding_registered = True
 
     def _refresh_step(self) -> None:
         app = App.get_running_app()
@@ -229,6 +232,9 @@ class QuickEntryScreen(Screen):
                 note="Acceso rapido",
                 occurred_at=datetime.now(timezone.utc),
             )
+            self._refresh_related_screens()
+            self.amount_value = 0.0
+            self.amount_text = "0"
             self._trigger_background_sync()
             sign = "+" if tx_type == "ingreso" else "-"
             self._show_dialog("Exito", f"Movimiento registrado: {sign}{amount}", is_error=False)
@@ -240,6 +246,20 @@ class QuickEntryScreen(Screen):
         if not app or not hasattr(app, "schedule_background_sync"):
             return
         app.schedule_background_sync(delay_seconds=1.0)
+
+    def _refresh_related_screens(self) -> None:
+        app = App.get_running_app()
+        if not app or not hasattr(app, "sm"):
+            return
+        for screen_name in ("dashboard", "transactions", "transactions_results", "reports"):
+            try:
+                screen = app.sm.get_screen(screen_name)
+                if hasattr(screen, "request_refresh"):
+                    screen.request_refresh()
+                elif hasattr(screen, "refresh"):
+                    screen.refresh()
+            except Exception:
+                continue
 
     def _show_dialog(self, title: str, message: str, is_error: bool) -> None:
         app = App.get_running_app()

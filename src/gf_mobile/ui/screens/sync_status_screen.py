@@ -132,11 +132,22 @@ class SyncStatusScreen(Screen):
             return
         if hasattr(app, "refresh_ui_session_state"):
             app.refresh_ui_session_state()
-        for screen_name in ("dashboard", "transactions_results", "reports"):
+        for screen_name in (
+            "dashboard",
+            "transactions",
+            "transactions_results",
+            "categories",
+            "budgets",
+            "reports",
+            "profile",
+            "quick_entry",
+        ):
             try:
                 screen = app.sm.get_screen(screen_name)
                 if hasattr(screen, "request_refresh"):
                     screen.request_refresh()
+                elif hasattr(screen, "request_categories_reload"):
+                    screen.request_categories_reload()
                 elif hasattr(screen, "refresh"):
                     screen.refresh()
             except Exception:
