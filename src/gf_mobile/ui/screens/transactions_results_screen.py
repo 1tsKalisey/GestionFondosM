@@ -6,6 +6,7 @@ from datetime import datetime
 from typing import Any, Dict, List
 
 from kivy.app import App
+from kivy.clock import Clock
 from kivy.lang import Builder
 from kivy.properties import DictProperty, ListProperty, StringProperty
 from kivy.metrics import dp
@@ -97,11 +98,26 @@ class TransactionsResultsScreen(Screen):
     def __init__(self, transaction_service=None, **kwargs):
         super().__init__(**kwargs)
         self.transaction_service = transaction_service
+        self._refresh_requested = True
 
     def on_pre_enter(self, *args):
         self._apply_theme_colors()
-        self.refresh()
         return super().on_pre_enter(*args)
+
+    def on_enter(self, *args):
+        self.request_refresh()
+        return super().on_enter(*args)
+
+    def request_refresh(self) -> None:
+        self._refresh_requested = True
+        Clock.unschedule(self._run_deferred_refresh)
+        Clock.schedule_once(self._run_deferred_refresh, 0)
+
+    def _run_deferred_refresh(self, *_args) -> None:
+        if not self._refresh_requested:
+            return
+        self._refresh_requested = False
+        self.refresh()
 
     def set_filters(self, filters: Dict[str, Any]) -> None:
         self.active_filters = dict(filters or {})

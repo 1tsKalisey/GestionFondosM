@@ -4,6 +4,7 @@ Dashboard screen.
 
 from datetime import datetime, timedelta
 
+from kivy.clock import Clock
 from kivy.lang import Builder
 from kivy.properties import NumericProperty, StringProperty
 from kivy.uix.screenmanager import Screen
@@ -236,12 +237,24 @@ class DashboardScreen(Screen):
         self.budget_service = None
         self.report_service = None
         self.category_service = None
+        self._refresh_requested = True
 
     def on_enter(self):
         if "nav_bar" in self.ids:
             self.ids.nav_bar.screen_manager = self.manager
             self.ids.nav_bar.current_screen = "dashboard"
         self._update_responsive_layout()
+        self.request_refresh()
+
+    def request_refresh(self) -> None:
+        self._refresh_requested = True
+        Clock.unschedule(self._run_deferred_refresh)
+        Clock.schedule_once(self._run_deferred_refresh, 0)
+
+    def _run_deferred_refresh(self, *_args) -> None:
+        if not self._refresh_requested:
+            return
+        self._refresh_requested = False
         self.refresh()
 
     def _update_responsive_layout(self) -> None:

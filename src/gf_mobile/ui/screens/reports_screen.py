@@ -4,6 +4,7 @@ Reports screen.
 
 from datetime import datetime, timedelta
 
+from kivy.clock import Clock
 from kivy.lang import Builder
 from kivy.properties import StringProperty
 from kivy.uix.screenmanager import Screen
@@ -125,6 +126,7 @@ class ReportsScreen(Screen):
         self.budget_service = None
         self.report_service = None
         self._dialog = None
+        self._refresh_requested = True
 
     def on_enter(self):
         if "nav_bar" in self.ids:
@@ -132,6 +134,17 @@ class ReportsScreen(Screen):
             self.ids.nav_bar.current_screen = "reports"
         if not self._load_saved_range():
             self.apply_range_preset("30d")
+        self.request_refresh()
+
+    def request_refresh(self) -> None:
+        self._refresh_requested = True
+        Clock.unschedule(self._run_deferred_refresh)
+        Clock.schedule_once(self._run_deferred_refresh, 0)
+
+    def _run_deferred_refresh(self, *_args) -> None:
+        if not self._refresh_requested:
+            return
+        self._refresh_requested = False
         self.refresh()
 
     def refresh(self) -> None:

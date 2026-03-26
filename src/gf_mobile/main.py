@@ -82,7 +82,7 @@ class GestionFondosMApp(MDApp):
         self.config_obj.ensure_db_dir()
         self.engine = build_engine()
         self.session_factory = build_session_factory(self.engine)
-        init_database()
+        init_database(self.engine)
         self._load_ui_theme_preference()
         self._apply_custom_palette_for_theme(self.config_obj.THEME)
         self.kivy_palette = get_kivy_palette()
@@ -694,8 +694,9 @@ class GestionFondosMApp(MDApp):
                         Clock.schedule_once(
                             lambda *_: self.sync_status_screen.update_last_sync_time()
                         )
-                    Clock.schedule_once(lambda *_: self.transactions_results_screen.refresh())
-                    Clock.schedule_once(lambda *_: self.dashboard_screen.refresh())
+                    Clock.schedule_once(lambda *_: self.refresh_ui_session_state())
+                    Clock.schedule_once(lambda *_: self.transactions_results_screen.request_refresh())
+                    Clock.schedule_once(lambda *_: self.dashboard_screen.request_refresh())
             except Exception as e:
                 print(f"Error en sincronizacion: {str(e)}")
                 error_message = f"Error en sincronizacion: {str(e)}"
